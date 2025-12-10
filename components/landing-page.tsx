@@ -58,9 +58,9 @@ export function LandingPage({ isLoading }: { isLoading: boolean }) {
         {/* Content */}
         <div className="relative z-10 flex flex-col gap-12 text-white">
           <div className="flex flex-col gap-4">
-            <h1 className="text-6xl font-bold">Crossmint Wallets</h1>
+            <h1 className="text-6xl font-bold">Finyx Wallets</h1>
             <p className="text-white/60 text-lg">
-              Get started with the Crossmint Wallets Quickstart.{" "}
+              Get started with the Finyx Wallets Quickstart.{" "}
               <a
                 href="https://github.com/crossmint/wallets-quickstart"
                 style={{ color: "white" }}
@@ -110,10 +110,10 @@ export function LandingPage({ isLoading }: { isLoading: boolean }) {
       <div className="flex flex-col items-center justify-center bg-gray-50 px-6 py-12 col-span-1 lg:col-span-3">
         <div className="lg:hidden mb-8 text-center">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Crossmint Wallets
+            Finyx Wallets
           </h1>
           <p className="text-gray-600">
-            Get started with the Crossmint Wallets Quickstart
+            Get started with the Finyx Wallets Quickstart
           </p>
         </div>
 

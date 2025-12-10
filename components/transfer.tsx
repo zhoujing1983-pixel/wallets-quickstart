@@ -35,16 +35,16 @@ export function TransferFunds() {
   }
 
   return (
-    <div className="bg-white rounded-2xl border shadow-sm p-6">
-      <div className="flex flex-col gap-4">
+    <div className="bg-[#0a1530] border border-white/10 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-slate-100">
+      <div className="flex flex-col gap-5">
         <div>
-          <h3 className="text-lg font-semibold mb-1">Transfer funds</h3>
-          <p className="text-sm text-gray-500">Send funds to another wallet</p>
+          <h3 className="text-lg font-semibold text-white">Transfer funds</h3>
+          <p className="text-sm text-slate-300">Send USDXM or native tokens</p>
         </div>
 
         {/* Amount Input */}
         <div className="relative">
-          <span className="absolute left-0 top-0 text-4xl font-bold text-gray-900 pointer-events-none">
+          <span className="absolute left-0 top-1 text-4xl font-bold text-white/70 pointer-events-none">
             $
           </span>
           <input
@@ -53,7 +53,7 @@ export function TransferFunds() {
             min="0"
             step="0.01"
             value={amountInput}
-            className="text-4xl font-bold text-gray-900 bg-transparent border-none outline-none w-full pl-8"
+            className="text-4xl font-bold text-white bg-transparent border-none outline-none w-full pl-8"
             placeholder="0.00"
             onChange={(e) => {
               const value = e.target.value;
@@ -76,13 +76,11 @@ export function TransferFunds() {
 
         {/* Transfer To Input */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-gray-700">
-            Transfer to
-          </label>
+          <label className="text-sm font-medium text-slate-300">Transfer to</label>
           <input
             type="text"
             value={recipient || ""}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-white/20 rounded-2xl bg-white/5 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#ffac44] focus:border-transparent transition"
             placeholder="Enter wallet address"
             onChange={(e) => setRecipient(e.target.value || null)}
           />
@@ -91,10 +89,10 @@ export function TransferFunds() {
         {/* Transfer Button */}
         <button
           className={cn(
-            "w-full py-3 px-4 rounded-full text-sm font-medium transition-colors",
+            "w-full py-3 px-4 rounded-full text-sm font-semibold transition-all duration-200",
             isLoading || !recipient || !amount
-              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-              : "bg-gray-900 text-white hover:bg-gray-800"
+              ? "bg-white/30 text-white/60 cursor-not-allowed"
+              : "bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] hover:opacity-90"
           )}
           onClick={handleOnTransfer}
           disabled={isLoading || !recipient || !amount}
@@ -106,11 +104,11 @@ export function TransferFunds() {
         {explorerLink && !isLoading && (
           <a
             href={explorerLink}
-            className="text-sm text-blue-600 hover:text-blue-800 text-center transition-colors"
+            className="text-sm text-orange-200 hover:text-orange-100 text-center transition-colors"
             target="_blank"
             rel="noopener noreferrer"
           >
-            → View transaction
+            → View transaction on explorer
           </a>
         )}
       </div>
