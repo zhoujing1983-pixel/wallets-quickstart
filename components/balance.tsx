@@ -60,26 +60,26 @@ export function WalletBalance() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 text-white">
       {/* Header with Icon and Info */}
       <div className="flex items-center gap-3">
         <Image src="/usdxm.svg" alt="USDXM" width={24} height={24} />
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold">USDXM balance</h3>
           <div className="relative group">
-            <div className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center cursor-help">
-              <span className="text-gray-500 text-xs font-medium">i</span>
+            <div className="w-5 h-5 rounded-full border border-white/40 flex items-center justify-center cursor-help">
+              <span className="text-xs font-medium">i</span>
             </div>
-            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-              USDXM is a test stablecoin
-              <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-white text-[#041126] text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+              USDXM is a Crossmint test stablecoin
+              <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-white"></div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Balance Display */}
-      <div className="text-4xl font-bold text-gray-900">$ {usdxmBalance}</div>
+      <div className="text-4xl font-bold">${usdxmBalance}</div>
 
       {/* Add Money Button */}
       <div className="flex flex-col gap-3">
@@ -88,15 +88,15 @@ export function WalletBalance() {
           disabled={isFunding}
           data-fund-button
           className={cn(
-            "w-full py-3 px-4 rounded-full text-sm font-medium bg-primary text-primary-foreground transition-colors cursor-pointer",
+            "w-full py-3 px-4 rounded-full text-sm font-semibold transition-all duration-200",
             isFunding
-              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-              : "hover:bg-primary/80"
+              ? "bg-white/20 text-white/60 cursor-not-allowed"
+              : "bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] shadow-lg"
           )}
         >
           {isFunding ? "Adding money..." : "Add money"}
         </button>
-        <p className="text-gray-500 text-xs text-center">
+        <p className="text-xs text-slate-300 text-center">
           Refresh the page after transferring. Balance may take a few seconds to
           update.
         </p>

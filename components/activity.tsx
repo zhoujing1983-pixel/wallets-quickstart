@@ -62,13 +62,13 @@ export function Activity() {
   };
 
   return (
-    <div className="bg-white rounded-2xl border shadow-sm p-6">
-      <div className="flex flex-col h-full">
-        <h3 className="text-lg font-semibold mb-4">Activity</h3>
+    <div className="bg-[#1c2c56] border border-white/15 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-6 text-slate-100">
+      <div className="flex flex-col h-full gap-4">
+        <h3 className="text-lg font-semibold text-white">Activity</h3>
 
         {!hasInitiallyLoaded ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-gray-500 text-sm">Loading activity...</div>
+            <div className="text-sm text-slate-400">Loading activity...</div>
           </div>
         ) : activity?.events && activity.events.length > 0 ? (
           <div className="flex-1 overflow-hidden">
@@ -81,17 +81,17 @@ export function Activity() {
                   <div
                     key={event.transaction_hash}
                     className={cn(
-                      "flex items-center justify-between p-3 rounded-lg transition-colors",
-                      index % 2 === 0 ? "bg-white" : "bg-gray-100"
+                      "flex items-center justify-between p-3 rounded-2xl transition-all duration-200",
+                      index % 2 === 0 ? "bg-white/5" : "bg-orange-500/5"
                     )}
                   >
                     <div className="flex items-center gap-3">
                       <div
                         className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center",
+                          "w-9 h-9 rounded-full flex items-center justify-center",
                           isIncoming
-                            ? "bg-green-100 text-green-600"
-                            : "bg-blue-100 text-blue-600"
+                            ? "bg-white/20 text-orange-100"
+                            : "bg-white/15 text-slate-200"
                         )}
                       >
                         <Image
@@ -102,22 +102,22 @@ export function Activity() {
                           }
                           alt={isIncoming ? "arrow-down" : "arrow-up-right"}
                           className={cn(
-                            isIncoming ? "filter-green" : "filter-blue"
+                            isIncoming ? "filter-blue" : "filter-green"
                           )}
-                          width={16}
-                          height={16}
+                          width={18}
+                          height={18}
                         />
                       </div>
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">
+                          <span className="text-sm font-medium text-white">
                             {isIncoming ? "Received" : "Sent"}
                           </span>
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-slate-400">
                             {formatTimestamp(event.timestamp)}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-500 font-mono">
+                        <div className="text-xs text-slate-300 font-mono">
                           {isIncoming
                             ? `From ${formatAddress(event.from_address)}`
                             : `To ${formatAddress(event.to_address)}`}
@@ -128,13 +128,13 @@ export function Activity() {
                       <div className="text-right">
                         <div
                           className={cn(
-                            "text-sm font-medium",
-                            isIncoming ? "text-green-600" : "text-primary"
+                            "text-sm font-semibold tracking-wide",
+                            isIncoming ? "text-orange-200" : "text-slate-200"
                           )}
                         >
                           {isIncoming ? "+" : "-"}${event.amount}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-slate-400">
                           {event?.token_symbol}
                         </div>
                       </div>
@@ -145,23 +145,20 @@ export function Activity() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
-            <h4 className="font-medium text-primary mb-2">
-              Your activity feed
-            </h4>
-            <p className="text-gray-500 text-sm mb-4">
-              When you add and send money it shows up here. Get started with
-              adding money to your account
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-4 gap-3">
+            <h4 className="font-medium text-white">Your activity feed</h4>
+            <p className="text-sm text-slate-400">
+              When you add and send money it shows up here. Get started by
+              topping up your balance.
             </p>
             <button
               onClick={() => {
-                // Trigger the fund function from balance component
                 const fundButton = document.querySelector("[data-fund-button]");
                 if (fundButton instanceof HTMLElement) {
                   fundButton.click();
                 }
               }}
-              className="px-6 py-2.5 rounded-full text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/80 transition-colors"
+              className="px-6 py-2 rounded-full text-sm font-semibold bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] shadow-lg transition hover:opacity-90"
             >
               Add money
             </button>

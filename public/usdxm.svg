@@ -9,10 +9,11 @@
   <circle cx="60" cy="60" r="58" fill="#041126" stroke="url(#finyx-grad)" stroke-width="4" />
   <text
     x="60"
-    y="78"
+    y="63"
     text-anchor="middle"
+    dominant-baseline="middle"
     font-family="Geist, 'Inter', sans-serif"
-    font-weight="800"
+    font-weight="900"
     font-size="78"
     fill="url(#finyx-grad)"
   >

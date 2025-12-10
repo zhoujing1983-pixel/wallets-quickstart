@@ -73,10 +73,10 @@ export function Dashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="flex flex-col gap-6">
-              <div className="bg-[#071128] border border-white/10 p-6 rounded-3xl shadow-lg">
+            <div className="bg-[#1c2c56] border border-white/15 p-6 rounded-3xl shadow-lg">
                 <WalletBalance />
               </div>
-              <div className="bg-[#071128] border border-white/10 p-6 rounded-3xl shadow-lg space-y-4">
+            <div className="bg-[#1c2c56] border border-white/15 p-6 rounded-3xl shadow-lg space-y-4">
                 <h3 className="text-lg font-semibold text-white">Wallet details</h3>
                 <div className="flex flex-col gap-3 text-sm text-slate-200">
                   <div className="flex items-center justify-between">

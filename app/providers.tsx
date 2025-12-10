@@ -6,8 +6,14 @@ import {
   CrossmintWalletProvider,
 } from "@crossmint/client-sdk-react-ui";
 
-if (!process.env.NEXT_PUBLIC_CROSSMINT_API_KEY) {
-  throw new Error("NEXT_PUBLIC_CROSSMINT_API_KEY is not set");
+const apiKey =
+  process.env.NEXT_PUBLIC_FINYX_API_KEY ??
+  process.env.NEXT_PUBLIC_CROSSMINT_API_KEY;
+
+if (!apiKey) {
+  throw new Error(
+    "NEXT_PUBLIC_FINYX_API_KEY (or the legacy NEXT_PUBLIC_CROSSMINT_API_KEY) is not set"
+  );
 }
 
 const chain = (process.env.NEXT_PUBLIC_CHAIN ?? "solana") as any;
@@ -20,21 +26,22 @@ const customAppearance = {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <CrossmintProvider apiKey={process.env.NEXT_PUBLIC_CROSSMINT_API_KEY || ""}>
+    <CrossmintProvider apiKey={apiKey}>
       <CrossmintAuthProvider
-        authModalTitle="Welcome"
+        authModalTitle="Welcome to Finyx"
         loginMethods={["google", "email"]}
         appearance={customAppearance}
         termsOfServiceText={
           <p>
             By continuing, you accept the{" "}
             <a
-              href="https://www.crossmint.com/legal/terms-of-service"
+              href="https://www.finyx.com/legal/terms-of-service"
               target="_blank"
+              rel="noreferrer"
             >
               Wallet's Terms of Service
             </a>
-            , and to recieve marketing communications from Crossmint.
+            , and to receive updates from Finyx.
           </p>
         }
       >

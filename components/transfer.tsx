@@ -35,7 +35,7 @@ export function TransferFunds() {
   }
 
   return (
-    <div className="bg-[#0a1530] border border-white/10 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-slate-100">
+    <div className="bg-[#1c2c56] border border-white/15 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-slate-100">
       <div className="flex flex-col gap-5">
         <div>
           <h3 className="text-lg font-semibold text-white">Transfer funds</h3>

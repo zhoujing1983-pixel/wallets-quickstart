@@ -3,38 +3,38 @@
 
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(96.83% 0.0069 247.9);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(21% 0.034 264.665);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(68.76% 0.1856 150.65);
-  --accent-foreground: oklch(60.29% 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem;
+  --background: #050915;
+  --foreground: #f7f4ef;
+  --card: #0c1428;
+  --card-foreground: #fdf4e6;
+  --popover: #0c1428;
+  --popover-foreground: #fdf7f1;
+  --primary: #f7931a;
+  --primary-foreground: #041126;
+  --secondary: #0e1c33;
+  --secondary-foreground: #e0e5f7;
+  --muted: #14203a;
+  --muted-foreground: #a0b0c4;
+  --accent: #ffad40;
+  --accent-foreground: #041126;
+  --destructive: #f2543d;
+  --border: #1b2a45;
+  --input: #101b33;
+  --ring: #f97b2c;
+  --chart-1: #f7931a;
+  --chart-2: #60b4ff;
+  --chart-3: #1cf7d7;
+  --chart-4: #f00;
+  --chart-5: #ff9b42;
+  --sidebar: #0b1226;
+  --sidebar-foreground: #fef9f2;
+  --sidebar-primary: #0b1226;
+  --sidebar-primary-foreground: #fef9f2;
+  --sidebar-accent: #ffad40;
+  --sidebar-accent-foreground: #041126;
+  --sidebar-border: #1b2a45;
+  --sidebar-ring: #f97b2c;
 }
 
 @theme inline {
@@ -80,7 +80,11 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    background: radial-gradient(circle at top, rgba(255, 147, 41, 0.35), transparent 40%),
+      radial-gradient(circle at 20% 30%, rgba(255, 173, 64, 0.2), transparent 55%),
+      radial-gradient(circle at 80% 0%, rgba(4, 9, 38, 0.8), rgba(4, 9, 38, 0.95)),
+      var(--background);
+    @apply text-foreground;
   }
 
   button:not([disabled]),

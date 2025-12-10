@@ -39,12 +39,11 @@ export function LandingPage({ isLoading }: { isLoading: boolean }) {
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-5">
       {/* Left side - Information with background */}
       <div
-        className="relative hidden lg:flex flex-col rounded-[20px] justify-center px-18 py-8 m-3 col-span-2"
+        className="relative hidden lg:flex flex-col rounded-[20px] justify-center px-18 py-8 m-3 col-span-2 bg-gradient-to-br from-[#ffb650] via-[#ff8f30] to-[#ff4f09]"
         style={{
-          backgroundImage: `url('/grid-bg.png')`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
+          backgroundImage:
+            "radial-gradient(circle at top right, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 40%), linear-gradient(135deg, rgba(255, 182, 80, 0.9), rgba(255, 122, 24, 0.85), rgba(255, 79, 9, 0.95))",
+          backgroundBlendMode: "screen",
         }}
       >
         {/* Dark overlay for better text readability */}
