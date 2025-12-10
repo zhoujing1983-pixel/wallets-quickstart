@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useWallet } from "@crossmint/client-sdk-react-ui";
 import Image from "next/image";
@@ -15,6 +17,10 @@ export function Dashboard() {
 
   const handleCopyAddress = async () => {
     if (!walletAddress) return;
+    if (typeof navigator === "undefined" || !navigator?.clipboard?.writeText) {
+      console.error("Clipboard API not available");
+      return;
+    }
     try {
       await navigator.clipboard.writeText(walletAddress);
       setCopiedAddress(true);
