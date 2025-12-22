@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type Activity, useWallet } from "@crossmint/client-sdk-react-ui";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,13 @@ export function Activity() {
   const { wallet } = useWallet();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false);
+  const tokenSymbolsByMint = useMemo<Record<string, string>>(
+    () => ({
+      "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": "USDC",
+      "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
+    }),
+    []
+  );
 
   useEffect(() => {
     if (!wallet) return;
@@ -14,10 +21,13 @@ export function Activity() {
     const fetchActivity = async () => {
       try {
         const activity = await wallet.experimental_activity();
-        const filteredUsdxmActivity = activity.events.filter((event) =>
-          event.token_symbol?.startsWith("USDXM")
-        );
-        setActivity({ events: filteredUsdxmActivity });
+        const filteredActivity = activity.events.filter((event) => {
+          const mintHash = event.mint_hash ?? "";
+          const symbol =
+            tokenSymbolsByMint[mintHash] ?? event.token_symbol?.toUpperCase();
+          return symbol?.startsWith("USDXM") || symbol === "USDC";
+        });
+        setActivity({ events: filteredActivity });
       } catch (error) {
         console.error("Failed to fetch activity:", error);
       } finally {
@@ -31,7 +41,7 @@ export function Activity() {
       fetchActivity();
     }, 5000);
     return () => clearInterval(interval);
-  }, [wallet]);
+  }, [tokenSymbolsByMint, wallet]);
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-6)}`;
@@ -77,6 +87,10 @@ export function Activity() {
                 const isIncoming =
                   event.to_address.toLowerCase() ===
                   wallet?.address.toLowerCase();
+                const tokenSymbol =
+                  tokenSymbolsByMint[event.mint_hash ?? ""] ??
+                  event.token_symbol ??
+                  "UNKNOWN";
                 return (
                   <div
                     key={event.transaction_hash}
@@ -135,7 +149,7 @@ export function Activity() {
                           {isIncoming ? "+" : "-"}${event.amount}
                         </div>
                         <div className="text-xs text-slate-400">
-                          {event?.token_symbol}
+                          {tokenSymbol}
                         </div>
                       </div>
                     </div>
