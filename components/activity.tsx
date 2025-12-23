@@ -173,11 +173,18 @@ export function Activity() {
         const currentHash = mergedEvents
           .map((event) => event.transaction_hash)
           .join("|");
+
+          console.log("has changed?????", lastActivityHash.current=== currentHash);
+       
+
         if (lastActivityHash.current !== currentHash) {
-          lastActivityHash.current = currentHash;
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new Event("wallet:refresh-balance"));
-          }
+          console.log("Activity has changed, dispatching event");
+         
+          // if (typeof window !== "undefined") {
+          //   console.log("Dispatching wallet:refresh-balance event");
+          //   window.dispatchEvent(new Event("wallet:refresh-balance"));
+          // }
+           lastActivityHash.current = currentHash;
         }
       } catch (error) {
         console.error("Failed to fetch activity:", error);
@@ -190,6 +197,9 @@ export function Activity() {
     // Poll every 5 seconds
     const interval = setInterval(() => {
       fetchActivity();
+       if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("wallet:refresh-balance"));
+          }
     }, 5000);
     return () => clearInterval(interval);
   }, [tokenSymbolsByMint, wallet]);

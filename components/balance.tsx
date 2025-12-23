@@ -17,9 +17,14 @@ export function WalletBalance() {
   const [usdxmAmountError, setUsdxmAmountError] = useState<string | null>(null);
 
   const refreshBalances = useCallback(async () => {
-    if (!wallet) return;
+    console.log("refreshing wallet balances");
+    if (!wallet) {
+      console.warn("Wallet not available yet");
+      return;
+    }
     try {
-      const balances = await wallet.balances(["usdxm"]);
+    const balances = await wallet.balances(["usdxm"]);
+      console.log("fetched wallet balances:", balances);
       setBalances(balances);
     } catch (error) {
       console.warn("Error fetching wallet balances:", error);
@@ -31,6 +36,7 @@ export function WalletBalance() {
   }, [refreshBalances]);
 
   useEffect(() => {
+    console.log("received event:", wallet?.address);
     const handleRefresh = () => {
       refreshBalances();
     };

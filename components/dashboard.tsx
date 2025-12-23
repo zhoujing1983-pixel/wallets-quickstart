@@ -357,7 +357,7 @@ export function Dashboard() {
                         {wallet?.owner?.replace(/^[^:]*:/, "") ||
                           "Current User"}
                       </span>
-                      <button
+                      {/* <button
                         onClick={() => {
                           if (!userLocator) {
                             setUserFormError(
@@ -376,7 +376,7 @@ export function Dashboard() {
                         aria-label="Edit owner"
                       >
                         <Image src="/window.svg" alt="Edit" width={16} height={16} />
-                      </button>
+                      </button> */}
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
