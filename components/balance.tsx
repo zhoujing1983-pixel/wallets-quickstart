@@ -11,6 +11,10 @@ export function WalletBalance() {
   const { user } = useAuth();
   const [balances, setBalances] = useState<Balances | null>(null);
   const [isOnrampOpen, setIsOnrampOpen] = useState(false);
+  const [isUsdxmFunding, setIsUsdxmFunding] = useState(false);
+  const [isUsdxmModalOpen, setIsUsdxmModalOpen] = useState(false);
+  const [usdxmAmountInput, setUsdxmAmountInput] = useState("10");
+  const [usdxmAmountError, setUsdxmAmountError] = useState<string | null>(null);
 
   const refreshBalances = useCallback(async () => {
     if (!wallet) return;
@@ -27,16 +31,20 @@ export function WalletBalance() {
   }, [refreshBalances]);
 
   useEffect(() => {
-    if (!isOnrampOpen || !wallet) {
-      return;
-    }
-    const intervalId = window.setInterval(() => {
+    const handleRefresh = () => {
       refreshBalances();
-    }, 1000);
-    return () => {
-      window.clearInterval(intervalId);
     };
-  }, [isOnrampOpen, refreshBalances, wallet]);
+    if (typeof window !== "undefined") {
+      window.addEventListener("wallet:refresh-balance", handleRefresh);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("wallet:refresh-balance", handleRefresh);
+      }
+    };
+  }, [refreshBalances]);
+
+
 
   const formatBalance = (balance: string) => {
     return Number(balance).toFixed(2);
@@ -53,6 +61,32 @@ export function WalletBalance() {
       return;
     }
     setIsOnrampOpen(true);
+  };
+
+  const handleUsdxmTopUp = async () => {
+    if (!wallet) {
+      return;
+    }
+    const fundingAmount = Number(usdxmAmountInput);
+    if (!Number.isFinite(fundingAmount) || fundingAmount <= 0) {
+      setUsdxmAmountError("Amount must be greater than 0.");
+      return;
+    }
+    if (fundingAmount > 100) {
+      setUsdxmAmountError("Amount must be 100 or less.");
+      return;
+    }
+    setUsdxmAmountError(null);
+    setIsUsdxmFunding(true);
+    try {
+      await wallet.stagingFund(fundingAmount);
+      await refreshBalances();
+      setIsUsdxmModalOpen(false);
+    } catch (error) {
+      alert(`Error getting test USDXM: ${error}`);
+    } finally {
+      setIsUsdxmFunding(false);
+    }
   };
 
   return (
@@ -75,30 +109,55 @@ export function WalletBalance() {
       </div>
 
       {/* Balance Display */}
-      <div className="text-4xl font-bold flex items-end gap-2">
-        <span>${usdxmBalance}</span>
-        <span className="text-xl font-semibold tracking-wide">USDXM</span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-3xl font-bold grid grid-cols-[20px_110px] items-end gap-0.5">
+          <span className="text-right">$</span>
+          <div className="text-right">
+            <span className="tabular-nums">{usdxmBalance}</span>
+            <sup className="ml-1 text-[10px] font-semibold tracking-wide align-super text-white/80">
+              USDXM
+            </sup>
+          </div>
+        </div>
+        <button
+          onClick={() => setIsUsdxmModalOpen(true)}
+          disabled={isUsdxmFunding}
+          className={cn(
+            "w-20 rounded-full px-4 py-2 text-center text-xs font-semibold transition-all duration-200",
+            isUsdxmFunding
+              ? "bg-white/20 text-white/60 cursor-not-allowed"
+              : "bg-white/10 text-white hover:bg-white/20"
+          )}
+        >
+          {isUsdxmFunding ? "Topping up..." : "Top up"}
+        </button>
       </div>
-      <div className="text-4xl font-bold flex items-end gap-2">
-        <span>${usdcBalance}</span>
-        <span className="text-xl font-semibold tracking-wide">USDC</span>
-      </div>
-
-      {/* Add Money Button */}
-      <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-3xl font-bold grid grid-cols-[20px_110px] items-end gap-0.5">
+          <span className="text-right">$</span>
+          <div className="text-right">
+            <span className="tabular-nums">{usdcBalance}</span>
+            <sup className="ml-1 text-[10px] font-semibold tracking-wide align-super text-white/80">
+              USDC
+            </sup>
+          </div>
+        </div>
         <button
           onClick={handleFund}
           data-fund-button
           className={cn(
-            "w-full py-3 px-4 rounded-full text-sm font-semibold transition-all duration-200",
+            "w-20 rounded-full px-4 py-2 text-center text-xs font-semibold transition-all duration-200",
             "bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] shadow-lg"
           )}
         >
-          Add money
+          Top up
         </button>
+      </div>
+
+      {/* Helper Text */}
+      <div className="flex flex-col gap-2">
         <p className="text-xs text-slate-300 text-center">
-          Refresh the page after transferring. Balance may take a few seconds to
-          update.
+          Balance may take a few seconds to update.
         </p>
       </div>
 
@@ -127,6 +186,66 @@ export function WalletBalance() {
                 }, 3000);
               }}
             />
+          </div>
+        </div>
+      ) : null}
+
+      {isUsdxmModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/60 px-4 py-10 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative w-full max-w-sm my-auto">
+            <div className="rounded-3xl border border-white/10 bg-[#0b1324] text-white shadow-[0_30px_80px_rgba(3,7,18,0.45)] overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+                <div>
+                  <h1 className="text-base font-semibold">Top up USDXM</h1>
+                  <p className="text-[11px] text-white/60">
+                    Enter the amount to mint.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsUsdxmModalOpen(false)}
+                  className="text-[11px] font-semibold text-white/70 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-semibold text-white/70">$</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={usdxmAmountInput}
+                    onChange={(event) => {
+                      setUsdxmAmountInput(event.target.value);
+                      setUsdxmAmountError(null);
+                    }}
+                    className="w-full rounded-xl bg-white/10 px-3 py-2 text-base font-semibold text-white outline-none focus:ring-2 focus:ring-[#ffac44]"
+                  />
+                </div>
+                {usdxmAmountError ? (
+                  <p className="text-[11px] text-red-200">
+                    {usdxmAmountError}
+                  </p>
+                ) : null}
+                <button
+                  onClick={handleUsdxmTopUp}
+                  disabled={isUsdxmFunding}
+                  className={cn(
+                    "w-full py-2 rounded-full text-xs font-semibold transition-all duration-200",
+                    isUsdxmFunding
+                      ? "bg-white/20 text-white/60 cursor-not-allowed"
+                      : "bg-white text-[#041126] hover:opacity-90"
+                  )}
+                >
+                  {isUsdxmFunding ? "Topping up..." : "Confirm"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

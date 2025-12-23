@@ -28,6 +28,7 @@ export function useCrossmintOnramp({
   const createOrder = useCallback(
     async (amountUsd: string) => {
       setStatus("creating-order");
+      setError(null);
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -39,7 +40,14 @@ export function useCrossmintOnramp({
       });
       const data: CreateOrderResponse | ApiErrorResponse = await res.json();
       if (!res.ok) {
-        setError((data as ApiErrorResponse).error);
+        const errorDetails = (data as ApiErrorResponse).details as
+          | { message?: string }
+          | undefined;
+        const errorMessage =
+          typeof errorDetails?.message === "string"
+            ? errorDetails.message
+            : (data as ApiErrorResponse).error;
+        setError(errorMessage ?? "Failed to create order");
         setStatus("error");
         return;
       }

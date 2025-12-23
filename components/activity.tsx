@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type Activity, useWallet } from "@crossmint/client-sdk-react-ui";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,8 @@ export function Activity() {
   const { wallet } = useWallet();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false);
+  const lastActivityHash = useRef<string | null>(null);
+  type ActivityEvent = Activity["events"][number];
   const tokenSymbolsByMint = useMemo<Record<string, string>>(
     () => ({
       "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": "USDC",
@@ -15,19 +17,168 @@ export function Activity() {
     []
   );
 
+  const toSol = (lamports: string) => (Number(lamports) / 1e9).toFixed(9);
+
   useEffect(() => {
     if (!wallet) return;
 
+    const normalizeTokenSymbol = (tokenLocator?: string) => {
+      if (!tokenLocator) return "UNKNOWN";
+      const upper = tokenLocator.toUpperCase();
+      const locatorSymbol = tokenLocator.includes(":")
+        ? tokenLocator.split(":").pop() ?? ""
+        : "";
+      const locatorUpper = locatorSymbol.toUpperCase();
+
+      if (["USDC", "USDXM", "SOL"].includes(locatorUpper)) {
+        return locatorUpper;
+      }
+      if (
+        upper.includes("USDC") ||
+        tokenLocator.includes("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU") ||
+        tokenLocator.includes("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+      ) {
+        return "USDC";
+      }
+      if (upper.includes("USDXM")) {
+        return "USDXM";
+      }
+      if (upper.includes("SOL")) {
+        return "SOL";
+      }
+      return "UNKNOWN";
+    };
+
+    const normalizeTimestamp = (value: unknown) => {
+      if (typeof value === "number") {
+        return value;
+      }
+      if (typeof value === "string") {
+        const parsed = Date.parse(value);
+        if (!Number.isNaN(parsed)) {
+          return Math.floor(parsed / 1000);
+        }
+      }
+      return Math.floor(Date.now() / 1000);
+    };
+
+    const isActivityEvent = (value: unknown): value is ActivityEvent => {
+      if (!value || typeof value !== "object") return false;
+      const event = value as ActivityEvent;
+      return (
+        typeof event.transaction_hash === "string" &&
+        typeof event.to_address === "string" &&
+        typeof event.from_address === "string" &&
+        typeof event.amount === "string" &&
+        typeof event.timestamp === "number" &&
+        typeof event.type === "string"
+      );
+    };
+
+    const extractOutgoingEvents = (
+      transactionsResponse: unknown
+    ) => {
+      if (
+        !transactionsResponse ||
+        typeof transactionsResponse !== "object" ||
+        !("transactions" in transactionsResponse)
+      ) {
+        return [];
+      }
+      const transactions = (transactionsResponse as { transactions: any[] })
+        .transactions;
+      if (!Array.isArray(transactions)) {
+        return [];
+      }
+
+      return transactions
+        .filter((transaction) => transaction?.status === "success")
+        .map((transaction) => {
+          const txHash =
+            transaction?.onChain?.txId ??
+            transaction?.onChain?.userOperationHash ??
+            transaction?.transactionHash ??
+            transaction?.id;
+          if (!txHash) {
+            return null;
+          }
+
+          const sendParams =
+            transaction?.sendParams ?? transaction?.params?.sendParams;
+          const toAddress =
+            sendParams?.params?.recipientAddress ??
+            sendParams?.params?.recipient ??
+            "";
+          const calls = transaction?.params?.calls;
+          const firstCall = Array.isArray(calls) ? calls[0] : null;
+          const rawValue =
+            (firstCall && (firstCall.value ?? firstCall.amount)) || undefined;
+          const amount =
+            sendParams?.params?.amount ??
+            sendParams?.amount ??
+            rawValue ??
+            "0";
+          const tokenLocator =
+            sendParams?.token ?? sendParams?.params?.token ?? "";
+          const tokenSymbol = normalizeTokenSymbol(tokenLocator);
+          if (!["USDXM", "USDC", "SOL"].includes(tokenSymbol)) {
+            return null;
+          }
+          const timestamp = normalizeTimestamp(
+            transaction?.updatedAt ?? transaction?.createdAt
+          );
+
+          return {
+            token_symbol: tokenSymbol,
+            transaction_hash: txHash,
+            to_address: toAddress || "",
+            from_address: wallet.address ?? "",
+            timestamp,
+            amount: String(amount),
+            type: "TRANSFER",
+          } as ActivityEvent;
+        })
+        .filter(isActivityEvent);
+    };
+
     const fetchActivity = async () => {
       try {
-        const activity = await wallet.experimental_activity();
-        const filteredActivity = activity.events.filter((event) => {
+        const [activityResponse, transactionsResponse] = await Promise.all([
+          wallet.experimental_activity(),
+          wallet.experimental_transactions(),
+        ]);
+
+        const filteredActivity = activityResponse.events.filter((event) => {
           const mintHash = event.mint_hash ?? "";
           const symbol =
             tokenSymbolsByMint[mintHash] ?? event.token_symbol?.toUpperCase();
-          return symbol?.startsWith("USDXM") || symbol === "USDC";
+          return (
+            symbol?.startsWith("USDXM") || symbol === "USDC" || symbol === "SOL"
+          );
         });
-        setActivity({ events: filteredActivity });
+
+        const outgoingEvents = extractOutgoingEvents(transactionsResponse);
+        const mergedByHash = new Map<string, ActivityEvent>();
+        for (const event of filteredActivity) {
+          mergedByHash.set(event.transaction_hash, event);
+        }
+        for (const event of outgoingEvents) {
+          mergedByHash.set(event.transaction_hash, event);
+        }
+        const mergedEvents = Array.from(mergedByHash.values()).sort(
+          (a, b) => b.timestamp - a.timestamp
+        );
+
+        setActivity({ events: mergedEvents });
+        const currentHash = mergedEvents
+          .map((event) => event.transaction_hash)
+          .join("|");
+        if (lastActivityHash.current !== currentHash) {
+          lastActivityHash.current = currentHash;
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("wallet:refresh-balance"));
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch activity:", error);
       } finally {
@@ -71,6 +222,7 @@ export function Activity() {
     }
   };
 
+
   return (
     <div className="bg-[#1c2c56] border border-white/15 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-6 text-slate-100">
       <div className="flex flex-col h-full gap-4">
@@ -91,6 +243,10 @@ export function Activity() {
                   tokenSymbolsByMint[event.mint_hash ?? ""] ??
                   event.token_symbol ??
                   "UNKNOWN";
+                const displayAmount =
+                  tokenSymbol === "SOL"
+                    ? toSol(event.amount)
+                    : event.amount;
                 return (
                   <div
                     key={event.transaction_hash}
@@ -140,14 +296,17 @@ export function Activity() {
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-right">
-                        <div
+                        <a
+                          href={`https://explorer.solana.com/tx/${event.transaction_hash}?cluster=devnet`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className={cn(
-                            "text-sm font-semibold tracking-wide",
+                            "text-sm font-semibold tracking-wide underline underline-offset-2 transition-colors hover:opacity-80",
                             isIncoming ? "text-orange-200" : "text-slate-200"
                           )}
                         >
-                          {isIncoming ? "+" : "-"}${event.amount}
-                        </div>
+                          {isIncoming ? "+" : "-"}${displayAmount}
+                        </a>
                         <div className="text-xs text-slate-400">
                           {tokenSymbol}
                         </div>

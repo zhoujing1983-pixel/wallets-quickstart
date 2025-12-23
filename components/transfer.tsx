@@ -9,6 +9,7 @@ export function TransferFunds() {
   const [recipient, setRecipient] = useState<string | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [amountInput, setAmountInput] = useState<string>("");
+  const [token, setToken] = useState<"usdxm" | "usdc">("usdxm");
   const [isLoading, setIsLoading] = useState(false);
   const [explorerLink, setExplorerLink] = useState<string | null>(null);
 
@@ -20,7 +21,7 @@ export function TransferFunds() {
 
     try {
       setIsLoading(true);
-      const txn = await wallet.send(recipient, "usdxm", amount.toString());
+      const txn = await wallet.send(recipient, token, amount.toString());
       setExplorerLink(txn.explorerLink);
     } catch (err) {
       console.error("Transfer: ", err);
@@ -39,7 +40,38 @@ export function TransferFunds() {
       <div className="flex flex-col gap-5">
         <div>
           <h3 className="text-lg font-semibold text-white">Transfer funds</h3>
-          <p className="text-sm text-slate-300">Send USDXM or native tokens</p>
+          <p className="text-sm text-slate-300">Send USDXM or USDC</p>
+        </div>
+
+        {/* Token Selector */}
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-slate-300">
+            Token to send
+          </span>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-white/90">
+              <input
+                type="radio"
+                name="transfer-token"
+                value="usdxm"
+                checked={token === "usdxm"}
+                onChange={() => setToken("usdxm")}
+                className="h-4 w-4 accent-[#ffac44]"
+              />
+              USDXM
+            </label>
+            <label className="flex items-center gap-2 text-sm text-white/90">
+              <input
+                type="radio"
+                name="transfer-token"
+                value="usdc"
+                checked={token === "usdc"}
+                onChange={() => setToken("usdc")}
+                className="h-4 w-4 accent-[#ffac44]"
+              />
+              USDC
+            </label>
+          </div>
         </div>
 
         {/* Amount Input */}
