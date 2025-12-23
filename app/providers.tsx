@@ -15,6 +15,7 @@ if (!apiKey) {
     "NEXT_PUBLIC_FINYX_API_KEY (or the legacy NEXT_PUBLIC_CROSSMINT_API_KEY) is not set"
   );
 }
+const resolvedApiKey = apiKey;
 
 const chain = (process.env.NEXT_PUBLIC_CHAIN ?? "solana") as any;
 
@@ -26,7 +27,7 @@ const customAppearance = {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <CrossmintProvider apiKey={apiKey}>
+    <CrossmintProvider apiKey={resolvedApiKey}>
       <CrossmintAuthProvider
         authModalTitle="Welcome to Finyx"
         loginMethods={["google", "email"]}

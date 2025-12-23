@@ -20,6 +20,11 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { amount, receiptEmail, walletAddress } = body;
+    console.log("[onramp:orders] payload", {
+      amount,
+      receiptEmail,
+      walletAddress,
+    });
 
     const tokenLocator = CROSSMINT_ENV === "production" ? USDC_PROD : USDC_STAGING;
     const baseUrl =
@@ -53,7 +58,10 @@ export async function POST(req: NextRequest) {
       }),
     });
 
+    console.log("[onramp:orders] request", body);
+
     const data = await response.json();
+    console.log("[onramp:orders] status", response.status);
     if (!response.ok) {
       return NextResponse.json(
         { error: data?.error || "Failed to create order", details: data },

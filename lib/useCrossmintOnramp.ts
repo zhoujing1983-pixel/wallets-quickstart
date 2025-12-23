@@ -29,6 +29,18 @@ export function useCrossmintOnramp({
     async (amountUsd: string) => {
       setStatus("creating-order");
       setError(null);
+      const endpoint =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/api/orders`
+          : "/api/orders";
+      console.log("[onramp sending to crossmint] POST", endpoint, {
+        headers: { "Content-Type": "application/json" },
+        body: {
+          amount: amountUsd,
+          receiptEmail: email,
+          walletAddress,
+        },
+      });
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

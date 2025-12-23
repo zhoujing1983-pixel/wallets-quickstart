@@ -9,8 +9,6 @@ import { cn } from "@/lib/utils";
 const DEFAULT_AMOUNT = "10.00";
 const FALLBACK_EMAIL = "demos+onramp-existing-user@crossmint.com";
 
-type UserType = "returning" | "new";
-
 type OnrampCheckoutProps = {
   onClose?: () => void;
   showReturnLink?: boolean;
@@ -37,12 +35,19 @@ export function OnrampCheckout({
     receiptEmailProp ?? searchParams.get("receiptEmail") ?? FALLBACK_EMAIL;
 
   const [amountUsd, setAmountUsd] = useState(initialAmount);
-  const [userType, setUserType] = useState<UserType>("returning");
   const hasReportedSuccess = useRef(false);
 
   useEffect(() => {
     setAmountUsd(initialAmount);
   }, [initialAmount]);
+
+  useEffect(() => {
+    console.log("[onramp] OnrampCheckout mounted", {
+      walletAddress,
+      receiptEmail,
+      initialAmount,
+    });
+  }, [initialAmount, receiptEmail, walletAddress]);
 
   useEffect(() => {
     if (!onPaymentSuccess) {
@@ -170,6 +175,10 @@ export function OnrampCheckout({
           <p className="text-[11px] text-white/60">
             Complete the purchase in this window.
           </p>
+          <p className="mt-2 text-[10px] text-white/50">
+            * For compliance reasons. This email is used by Crossmint to
+            determine whether KYC is required for the order.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {showReturnLink ? (
@@ -190,37 +199,6 @@ export function OnrampCheckout({
       </div>
 
       <div className="p-5 space-y-4">
-        <div className="space-y-1">
-          <div className="flex items-center bg-white/10 rounded-full p-1 gap-1">
-            <button
-              className={cn(
-                "flex-1 rounded-full py-1.5 text-[11px] font-semibold transition",
-                userType === "returning"
-                  ? "bg-white text-[#041126]"
-                  : "text-white/60 hover:text-white"
-              )}
-              onClick={() => setUserType("returning")}
-            >
-              Returning user
-            </button>
-            <button
-              className={cn(
-                "flex-1 rounded-full py-1.5 text-[11px] font-semibold transition",
-                userType === "new"
-                  ? "bg-white text-[#041126]"
-                  : "text-white/60 hover:text-white"
-              )}
-              onClick={() => setUserType("new")}
-            >
-              New user (KYC)
-            </button>
-          </div>
-          <p className="text-[11px] text-white/60">
-            {userType === "returning"
-              ? "You already completed KYC. Use this flow to quickly add funds."
-              : "Complete a light identity verification before your first deposit."}
-          </p>
-        </div>
         {isMissingWallet ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/80">
             Wallet address missing. Please open this window from the wallet
@@ -250,6 +228,11 @@ export function OnrampCheckout({
             )}
             <button
               onClick={() => {
+                console.log("[onramp] Continue clicked", {
+                  walletAddress,
+                  receiptEmail,
+                  amountUsd,
+                });
                 if (!amountUsd || Number(amountUsd) <= 0) {
                   alert("Enter a valid amount");
                   return;
