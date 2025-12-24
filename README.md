@@ -3,7 +3,7 @@
 <br />
 <br />
 <h1>Finyx Wallet Studio</h1>
-<p>A Finyx-themed quickstart powered by Crossmint's wallet stack.</p>
+<p>A Finyx-themed quickstart wallet stack.</p>
 
 <div align="center">
 <a href="https://wallets.demos-crossmint.com/">Live demo</a> |
@@ -55,7 +55,16 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
    # Check all supported chains: https://docs.crossmint.com/introduction/supported-chains
    NEXT_PUBLIC_CHAIN=your_chain
    ```
-5. Run the dev server:
+5. Configure the bank account reference so the withdraw flow can target your Crossmint bank transfer.
+   ```bash
+   NEXT_PUBLIC_CROSSMINT_BANK_ACCOUNT_REF=your_bank_account_ref
+   ```
+6. Supply the server-side credentials so the backend routes (wallet/user updates and onramps) can reach Crossmint.
+   ```bash
+   CROSSMINT_SERVER_SIDE_API_KEY=your_server_side_api_key
+   CROSSMINT_ENV=staging # switch to "production" for live usage
+   ```
+7. Run the dev server:
    ```bash
    npm run dev
    # or

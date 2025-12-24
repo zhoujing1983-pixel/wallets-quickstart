@@ -273,37 +273,36 @@ export function Dashboard() {
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <div className="w-full max-w-6xl mx-auto px-4 py-10 flex flex-col gap-8">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex items-center gap-4">
-              <Image
-                src="/finyx.svg"
-                alt="Finyx logo"
-                priority
-                width={160}
-                height={60}
-                className="h-12 w-auto"
-              />
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
-                  Wallet Studio
-                </p>
-                <h1 className="text-3xl font-semibold text-slate-900">
-                  Designed for the Finyx community
-                </h1>
-              </div>
-            </div>
-            <div className="text-right text-sm text-slate-500">
-              <p className="text-slate-400">Connected chain</p>
-              <p className="text-lg font-semibold text-slate-900">
-                {wallet?.chain ?? "Unknown"}
-              </p>
-            </div>
+        <section
+          className="rounded-[32px] overflow-hidden shadow-[0_30px_80px_rgba(5,12,41,0.15)]"
+          style={{
+            backgroundImage: "url('/dashboard-hero.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        >
+          <div className="flex flex-col gap-4 px-6 py-10 backdrop-brightness-75">
+            <p className="text-xs uppercase tracking-[0.4em] text-white/70">
+              Finyx WAAS
+            </p>
+            <h2 className="text-1.8xl font-semibold text-white sm:text-1.8xl">
+              <span className="inline-flex items-center gap-1">
+                <Image
+                  src="/bitcoin-icon.svg"
+                  width={30}
+                  height={30}
+                  alt="Bitcoin icon"
+                  className="h-8 w-8"
+                />
+                <span>uilt for fast payouts and compliant flows</span>
+              </span>
+
+            </h2>
+            <p className="max-w-3xl text-sm text-white/80">
+              {/* Finyx Wallet Studio wraps Crossmint primitives with enterprise-grade
+              custody, white-label UX, and modern web3 tooling. */}
+            </p>
           </div>
-          <p className="text-sm text-slate-500 max-w-2xl">
-            Finyx Wallet Studio wraps Crossmint's wallet primitives with bright
-            gradients, bold typography, and frictionless flows.
-          </p>
         </section>
 
         <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
@@ -319,10 +318,10 @@ export function Dashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="flex flex-col gap-6">
-              <div className="bg-[#1c2c56] border border-white/15 p-6 rounded-3xl shadow-lg">
+              <div className="bg-[#27395d] border border-white/15 p-6 rounded-3xl shadow-lg">
                 <WalletBalance />
               </div>
-              <div className="bg-[#1c2c56] border border-white/15 p-6 rounded-3xl shadow-lg space-y-4">
+              <div className="bg-[#27395d] border border-white/15 p-6 rounded-3xl shadow-lg space-y-4">
                 <h3 className="text-lg font-semibold text-white">Wallet details</h3>
                 <div className="flex flex-col gap-3 text-sm text-slate-200">
                   <div className="flex items-center justify-between">
@@ -388,10 +387,10 @@ export function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 flex h-full flex-col">
               <TransferFunds />
             </div>
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 flex h-full flex-col">
               <Activity />
             </div>
           </div>

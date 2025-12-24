@@ -36,47 +36,18 @@ export function TransferFunds() {
   }
 
   return (
-    <div className="bg-[#1c2c56] border border-white/15 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-slate-100">
+    <div className="bg-[#27395d] border border-white/15 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-slate-100 h-full">
       <div className="flex flex-col gap-5">
         <div>
           <h3 className="text-lg font-semibold text-white">Transfer funds</h3>
-          <p className="text-sm text-slate-300">Send USDXM or USDC</p>
+          <p className="text-sm text-slate-300">Send USDC</p>
         </div>
 
-        {/* Token Selector */}
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-slate-300">
-            Token to send
-          </span>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-white/90">
-              <input
-                type="radio"
-                name="transfer-token"
-                value="usdxm"
-                checked={token === "usdxm"}
-                onChange={() => setToken("usdxm")}
-                className="h-4 w-4 accent-[#ffac44]"
-              />
-              USDXM
-            </label>
-            <label className="flex items-center gap-2 text-sm text-white/90">
-              <input
-                type="radio"
-                name="transfer-token"
-                value="usdc"
-                checked={token === "usdc"}
-                onChange={() => setToken("usdc")}
-                className="h-4 w-4 accent-[#ffac44]"
-              />
-              USDC
-            </label>
-          </div>
-        </div>
+        
 
         {/* Amount Input */}
         <div className="relative">
-          <span className="absolute left-0 top-1 text-4xl font-bold text-white/70 pointer-events-none">
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 text-3xl font-bold text-white/70 pointer-events-none">
             $
           </span>
           <input
@@ -85,7 +56,7 @@ export function TransferFunds() {
             min="0"
             step="0.01"
             value={amountInput}
-            className="text-4xl font-bold text-white bg-transparent border-none outline-none w-full pl-8"
+            className="text-3xl font-bold text-white bg-transparent border-none outline-none w-full pl-8"
             placeholder="0.00"
             onChange={(e) => {
               const value = e.target.value;

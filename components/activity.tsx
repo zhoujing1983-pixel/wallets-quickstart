@@ -121,7 +121,7 @@ export function Activity() {
           const tokenLocator =
             sendParams?.token ?? sendParams?.params?.token ?? "";
           const tokenSymbol = normalizeTokenSymbol(tokenLocator);
-          if (!["USDXM", "USDC", "SOL"].includes(tokenSymbol)) {
+          if (!["USDC", "SOL"].includes(tokenSymbol)) {
             return null;
           }
           const timestamp = normalizeTimestamp(
@@ -152,9 +152,7 @@ export function Activity() {
           const mintHash = event.mint_hash ?? "";
           const symbol =
             tokenSymbolsByMint[mintHash] ?? event.token_symbol?.toUpperCase();
-          return (
-            symbol?.startsWith("USDXM") || symbol === "USDC" || symbol === "SOL"
-          );
+          return symbol === "USDC" || symbol === "SOL";
         });
 
         const outgoingEvents = extractOutgoingEvents(transactionsResponse);
@@ -234,7 +232,7 @@ export function Activity() {
 
 
   return (
-    <div className="bg-[#1c2c56] border border-white/15 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-6 text-slate-100">
+    <div className="bg-[#27395d] border border-white/15 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-6 text-slate-100">
       <div className="flex flex-col h-full gap-4">
         <h3 className="text-lg font-semibold text-white">Activity</h3>
 
@@ -244,7 +242,7 @@ export function Activity() {
           </div>
         ) : activity?.events && activity.events.length > 0 ? (
           <div className="flex-1 overflow-hidden">
-            <div className="max-h-[378px] overflow-y-auto space-y-3">
+            <div className="max-h-[277px] overflow-y-auto space-y-3">
               {activity.events.map((event, index) => {
                 const isIncoming =
                   event.to_address.toLowerCase() ===

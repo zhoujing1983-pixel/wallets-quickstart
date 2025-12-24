@@ -2,15 +2,12 @@ import Image from "next/image";
 
 export function Footer() {
   return (
-    <footer className="flex flex-col gap-6 items-center justify-center py-8 mt-auto text-slate-100">
-      <div className="flex gap-6 flex-wrap items-center justify-center text-sm">
-        
-        
-        
+    <footer className="flex flex-col gap-2 items-center justify-center py-4 mt-auto">
+      <div className="flex items-center gap-3">
+        <span className="text-[13px] font-semibold uppercase tracking-[0.5em] text-slate-500">
+          Finyx WaaS Studio
+        </span>
       </div>
-      <p className="text-xs uppercase tracking-widest text-slate-400">
-        Finyx Wallet Studio — powered by Crossmint
-      </p>
     </footer>
   );
 }

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Balances, useWallet, useAuth } from "@crossmint/client-sdk-react-ui";
 import { cn } from "@/lib/utils";
 import { OnrampCheckout } from "@/components/onramp-checkout";
+import { WithdrawModal } from "@/components/withdraw";
 
 export function WalletBalance() {
   const { wallet } = useWallet();
@@ -15,6 +16,9 @@ export function WalletBalance() {
   const [isUsdxmModalOpen, setIsUsdxmModalOpen] = useState(false);
   const [usdxmAmountInput, setUsdxmAmountInput] = useState("10");
   const [usdxmAmountError, setUsdxmAmountError] = useState<string | null>(null);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const bankAccountRef =
+    process.env.NEXT_PUBLIC_CROSSMINT_BANK_ACCOUNT_REF ?? "";
 
   const refreshBalances = useCallback(async () => {
     console.log("refreshing wallet balances");
@@ -69,6 +73,46 @@ export function WalletBalance() {
     setIsOnrampOpen(true);
   };
 
+  const handleWithdraw = () => {
+    setIsWithdrawModalOpen(true);
+  };
+
+  const handleWithdrawSubmit = async () => {
+    const amount = Number(withdrawAmountInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setWithdrawError("Enter an amount greater than 0.");
+      return;
+    }
+    setWithdrawError(null);
+    setIsWithdrawing(true);
+    if (!wallet) {
+      setWithdrawError("Wallet is not ready yet.");
+      setIsWithdrawing(false);
+      return;
+    }
+    if (!bankAccountRef) {
+      setWithdrawError("Bank account reference is not configured.");
+      setIsWithdrawing(false);
+      return;
+    }
+    try {
+      const txn = await wallet.send(
+        `email:${bankAccountRef}`,
+        "usdc",
+        amount.toString()
+      );
+      await refreshBalances();
+      setIsWithdrawModalOpen(false);
+      console.log("Withdraw transaction", txn);
+    } catch (error: any) {
+      setWithdrawError(
+        error?.message || "Failed to send money to the bank account."
+      );
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
+
   const handleUsdxmTopUp = async () => {
     if (!wallet) {
       return;
@@ -99,7 +143,7 @@ export function WalletBalance() {
     <div className="flex flex-col gap-4 text-white">
       {/* Header with Icon and Info */}
       <div className="flex items-center gap-3">
-        <Image src="/usdxm.svg" alt="USDXM" width={24} height={24} />
+       
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold">Balance</h3>
           <div className="relative group">
@@ -115,57 +159,42 @@ export function WalletBalance() {
       </div>
 
       {/* Balance Display */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-3xl font-bold grid grid-cols-[20px_110px] items-end gap-0.5">
-          <span className="text-right">$</span>
-          <div className="text-right">
-            <span className="tabular-nums">{usdxmBalance}</span>
-            <sup className="ml-1 text-[10px] font-semibold tracking-wide align-super text-white/80">
-              USDXM
-            </sup>
-          </div>
+      
+      <div className="flex flex-col gap-2 items-start">
+        <div className="flex items-end gap-2">
+          <span className="text-3xl font-bold">$</span>
+          <span className="text-3xl font-bold tabular-nums">{usdcBalance}</span>
+          <span className="text-2xl font-semibold text-white/80">USDC</span>
         </div>
-        <button
-          onClick={() => setIsUsdxmModalOpen(true)}
-          disabled={isUsdxmFunding}
-          className={cn(
-            "w-20 rounded-full px-4 py-2 text-center text-xs font-semibold transition-all duration-200",
-            isUsdxmFunding
-              ? "bg-white/20 text-white/60 cursor-not-allowed"
-              : "bg-white/10 text-white hover:bg-white/20"
-          )}
-        >
-          {isUsdxmFunding ? "Topping up..." : "Top up"}
-        </button>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-3xl font-bold grid grid-cols-[20px_110px] items-end gap-0.5">
-          <span className="text-right">$</span>
-          <div className="text-right">
-            <span className="tabular-nums">{usdcBalance}</span>
-            <sup className="ml-1 text-[10px] font-semibold tracking-wide align-super text-white/80">
-              USDC
-            </sup>
-          </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleFund}
+            data-fund-button
+            className={cn(
+              "min-w-[72px] rounded-full px-3 py-2 text-center text-xs font-semibold transition-all duration-200",
+              "bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] shadow-lg"
+            )}
+          >
+            Top up
+          </button>
+          <button
+            onClick={handleWithdraw}
+            className={cn(
+              "min-w-[72px] rounded-full px-3 py-2 text-center text-xs font-semibold transition-all duration-200",
+              "bg-gradient-to-r from-[#ffffff] to-[#d0d2ff] text-[#041126] shadow-lg"
+            )}
+          >
+            Withdraw
+          </button>
         </div>
-        <button
-          onClick={handleFund}
-          data-fund-button
-          className={cn(
-            "w-20 rounded-full px-4 py-2 text-center text-xs font-semibold transition-all duration-200",
-            "bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] shadow-lg"
-          )}
-        >
-          Top up
-        </button>
       </div>
 
       {/* Helper Text */}
-      <div className="flex flex-col gap-2">
+      {/* <div className="flex flex-col gap-2">
         <p className="text-xs text-slate-300 text-center">
           Balance may take a few seconds to update.
         </p>
-      </div>
+      </div> */}
 
       {isOnrampOpen ? (
         <div
@@ -255,6 +284,15 @@ export function WalletBalance() {
           </div>
         </div>
       ) : null}
+
+      <WithdrawModal
+        open={isWithdrawModalOpen}
+        bankAccountRef={bankAccountRef}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        onSuccess={() => {
+          refreshBalances();
+        }}
+      />
     </div>
   );
 }
