@@ -169,12 +169,6 @@ export function WalletBalance() {
           aria-modal="true"
         >
           <div className="relative w-full max-w-xl my-auto">
-            <button
-              onClick={() => setIsOnrampOpen(false)}
-              className="absolute -top-10 right-0 text-xs font-semibold text-white/70 hover:text-white"
-            >
-              Close
-            </button>
             <OnrampCheckout
               onClose={() => setIsOnrampOpen(false)}
               showReturnLink={false}
