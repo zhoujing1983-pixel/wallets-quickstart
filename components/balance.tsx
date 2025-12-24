@@ -77,41 +77,7 @@ export function WalletBalance() {
     setIsWithdrawModalOpen(true);
   };
 
-  const handleWithdrawSubmit = async () => {
-    const amount = Number(withdrawAmountInput);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setWithdrawError("Enter an amount greater than 0.");
-      return;
-    }
-    setWithdrawError(null);
-    setIsWithdrawing(true);
-    if (!wallet) {
-      setWithdrawError("Wallet is not ready yet.");
-      setIsWithdrawing(false);
-      return;
-    }
-    if (!bankAccountRef) {
-      setWithdrawError("Bank account reference is not configured.");
-      setIsWithdrawing(false);
-      return;
-    }
-    try {
-      const txn = await wallet.send(
-        `email:${bankAccountRef}`,
-        "usdc",
-        amount.toString()
-      );
-      await refreshBalances();
-      setIsWithdrawModalOpen(false);
-      console.log("Withdraw transaction", txn);
-    } catch (error: any) {
-      setWithdrawError(
-        error?.message || "Failed to send money to the bank account."
-      );
-    } finally {
-      setIsWithdrawing(false);
-    }
-  };
+ 
 
   const handleUsdxmTopUp = async () => {
     if (!wallet) {
