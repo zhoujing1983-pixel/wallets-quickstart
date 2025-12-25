@@ -30,7 +30,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <CrossmintProvider apiKey={resolvedApiKey}>
       <CrossmintAuthProvider
         authModalTitle="Welcome to Finyx"
-        loginMethods={["google", "email"]}
+        loginMethods={["google", "email" , "farcaster", "twitter", "web3"]}
         appearance={customAppearance}
         termsOfServiceText={
           <p>
