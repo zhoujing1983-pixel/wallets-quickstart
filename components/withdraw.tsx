@@ -4,11 +4,33 @@ import { useState } from "react";
 import { useWallet } from "@crossmint/client-sdk-react-ui";
 import { cn } from "@/lib/utils";
 
+// import { CrossmintWallets, createCrossmint } from "@crossmint/wallets-sdk";
+// const CROSSMINT_SERVER_SIDE_API_KEY = process.env.CROSSMINT_SERVER_SIDE_API_KEY as string;
+
+// const crossmint = createCrossmint({
+//     apiKey: CROSSMINT_SERVER_SIDE_API_KEY,
+// });
+
+// const crossmintWallets = CrossmintWallets.from(crossmint);
+
+// const wallet = await crossmintWallets.createWallet({
+//     chain: "solana",
+//     signer: {
+//         type: "external-wallet",
+//         address: "WUyB2nCgAFhcf9vJ34s7vUK4KJc77bgoeM3swMcwfWn",
+//     },
+//     owner: "COMPANY",
+//     alias: "treasury",
+// });
+
+// console.log(wallet.address);
+
 type WithdrawModalProps = {
   open: boolean;
   bankAccountRef: string;
   onClose: () => void;
   onSuccess?: () => void;
+  availableBalance?: string;
 };
 
 export function WithdrawModal({
@@ -16,6 +38,7 @@ export function WithdrawModal({
   bankAccountRef,
   onClose,
   onSuccess,
+  availableBalance,
 }: WithdrawModalProps) {
   const { wallet } = useWallet();
   const [amountInput, setAmountInput] = useState("50");
@@ -30,6 +53,11 @@ export function WithdrawModal({
     const amount = Number(amountInput);
     if (!Number.isFinite(amount) || amount <= 0) {
       setError("Enter an amount greater than 0.");
+      return;
+    }
+    const balance = Number(availableBalance ?? "0");
+    if (amount > balance) {
+      setError("Withdrawal exceeds your available balance.");
       return;
     }
     if (!wallet) {
@@ -117,4 +145,3 @@ export function WithdrawModal({
     </div>
   );
 }
-

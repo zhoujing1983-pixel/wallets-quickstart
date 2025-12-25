@@ -9,7 +9,7 @@ export function TransferFunds() {
   const [recipient, setRecipient] = useState<string | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [amountInput, setAmountInput] = useState<string>("");
-  const [token, setToken] = useState<"usdxm" | "usdc">("usdxm");
+  const [token, setToken] = useState<"usdxm" | "usdc">("usdc");
   const [isLoading, setIsLoading] = useState(false);
   const [explorerLink, setExplorerLink] = useState<string | null>(null);
 

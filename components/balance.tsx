@@ -248,6 +248,7 @@ export function WalletBalance() {
       <WithdrawModal
         open={isWithdrawModalOpen}
         bankAccountRef={bankAccountRef}
+        availableBalance={balances?.usdc?.amount ?? "0"}
         onClose={() => setIsWithdrawModalOpen(false)}
         onSuccess={() => {
           refreshBalances();
