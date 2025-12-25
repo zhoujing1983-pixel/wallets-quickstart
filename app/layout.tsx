@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Finyx Wallet Studio",
-  description: "A Finyx-branded wallet experience built on Crossmint tech",
+  description: "A Finyx-branded wallet experience",
 };
 
 export default function RootLayout({
