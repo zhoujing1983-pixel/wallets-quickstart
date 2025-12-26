@@ -50,8 +50,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
           appearance={customAppearance}
           createOnLogin={{
             chain: chain,
-            signer: {
+            signer:{
               type: "email",
+            
+            // alias: "external-wallet-demo",
+            // signer: {
+            //   type: "external-wallet",
+            //   address: "8eRQH6m65h27B17qPCS43biP3waFre1kQC9ZTteZZmMe",
             },
           }}
         >

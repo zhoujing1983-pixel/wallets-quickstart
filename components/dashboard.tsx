@@ -9,6 +9,7 @@ import { Footer } from "./footer";
 import { LogoutButton } from "./logout";
 import { WalletBalance } from "./balance";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 export function Dashboard() {
   const { wallet } = useWallet();
@@ -313,7 +314,15 @@ export function Dashboard() {
                 Wallet overview and instant actions
               </p>
             </div>
-            <LogoutButton />
+            <div className="flex items-center gap-3">
+              <Link
+                href="/402"
+                className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold text-[#041126] bg-white/90 border border-white/60 shadow-lg transition hover:bg-white"
+              >
+                402 Demo
+              </Link>
+              <LogoutButton />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -394,6 +403,7 @@ export function Dashboard() {
               <Activity />
             </div>
           </div>
+
         </section>
       </div>
       {isUserEditorOpen ? (
