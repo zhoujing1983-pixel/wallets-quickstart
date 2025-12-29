@@ -38,7 +38,7 @@ export function PaymentGate({
   const [receiptPayload, setReceiptPayload] = useState<Record<string, unknown> | null>(
     null
   );
-  const [receiptQrDataUrl, setReceiptQrDataUrl] = useState<string | null>(null);
+  const [txExplorerQrDataUrl, setTxExplorerQrDataUrl] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txHashInput, setTxHashInput] = useState("");
   const [explorerLink, setExplorerLink] = useState<string | null>(null);
@@ -95,6 +95,7 @@ export function PaymentGate({
   const [isSigningDelegation, setIsSigningDelegation] = useState(false);
   const [isMintingDelegation, setIsMintingDelegation] = useState(false);
   const [requireManualApproval, setRequireManualApproval] = useState(false);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [lastSignatureId, setLastSignatureId] = useState<string | null>(null);
   const [lastTransactionId, setLastTransactionId] = useState<string | null>(
     null
@@ -112,28 +113,30 @@ export function PaymentGate({
     null
   );
   const [aFlowError, setAFlowError] = useState<string | null>(null);
+  const [isStepResultsOpen, setIsStepResultsOpen] = useState(false);
+  const [isBFlowOpen, setIsBFlowOpen] = useState(false);
   const [aFlowSteps, setAFlowSteps] = useState<
     Array<{ id: string; label: string; status: "pending" | "running" | "success" | "error" }>
   >([
-    { id: "provider-402", label: "触发 402", status: "pending" },
-    { id: "intent-create", label: "生成 intent", status: "pending" },
-    { id: "intent-sign", label: "签名 intent", status: "pending" },
-    { id: "intent-verify", label: "intent 验签", status: "pending" },
-    { id: "waas-pay", label: "WaaS 支付", status: "pending" },
-    { id: "receipt-mint", label: "生成 receipt", status: "pending" },
-    { id: "provider-access", label: "凭证放行", status: "pending" },
+    { id: "provider-402", label: "服务返回 402（Payment Required）", status: "pending" },
+    { id: "intent-create", label: "Agent 生成支付意图", status: "pending" },
+    { id: "intent-sign", label: "自动授权 / 交互授权", status: "pending" },
+    { id: "intent-verify", label: "系统验证支付授权", status: "pending" },
+    { id: "waas-pay", label: "Agent 自动执行支付", status: "pending" },
+    { id: "receipt-mint", label: "生成支付凭证", status: "pending" },
+    { id: "provider-access", label: "服务继续执行（解锁访问）", status: "pending" },
   ]);
   const [bFlowError, setBFlowError] = useState<string | null>(null);
   const [bFlowSteps, setBFlowSteps] = useState<
     Array<{ id: string; label: string; status: "pending" | "running" | "success" | "error" }>
   >([
-    { id: "provider-402", label: "触发 402", status: "pending" },
+    { id: "provider-402", label: "服务返回 402（Payment Required）", status: "pending" },
     { id: "delegation-challenge", label: "生成委托", status: "pending" },
     { id: "delegation-sign", label: "签名委托", status: "pending" },
     { id: "delegation-mint", label: "委托验签", status: "pending" },
-    { id: "waas-pay", label: "WaaS 支付", status: "pending" },
-    { id: "receipt-mint", label: "生成 receipt", status: "pending" },
-    { id: "provider-access", label: "凭证放行", status: "pending" },
+    { id: "waas-pay", label: "Agent 自动执行支付", status: "pending" },
+    { id: "receipt-mint", label: "生成支付凭证", status: "pending" },
+    { id: "provider-access", label: "服务继续执行（解锁访问）", status: "pending" },
   ]);
 
   const amount = useMemo(() => {
@@ -159,27 +162,35 @@ export function PaymentGate({
   const memoExplorerLink = memoTx
     ? `https://explorer.solana.com/tx/${memoTx}?cluster=${memoCluster}`
     : null;
+  const txExplorerLink = useMemo(() => {
+    if (!txHash) return null;
+    return `https://explorer.solana.com/tx/${txHash}?cluster=${memoCluster}`;
+  }, [txHash, memoCluster]);
   useEffect(() => {
-    if (!receipt) {
-      setReceiptQrDataUrl(null);
+    if (!txExplorerLink) {
+      setTxExplorerQrDataUrl(null);
       return;
     }
     let active = true;
-    QRCode.toDataURL(receipt, { width: 180, margin: 1 })
+    QRCode.toDataURL(txExplorerLink, {
+      width: 280,
+      margin: 2,
+      errorCorrectionLevel: "M",
+    })
       .then((url) => {
         if (active) {
-          setReceiptQrDataUrl(url);
+          setTxExplorerQrDataUrl(url);
         }
       })
       .catch(() => {
         if (active) {
-          setReceiptQrDataUrl(null);
+          setTxExplorerQrDataUrl(null);
         }
       });
     return () => {
       active = false;
     };
-  }, [receipt]);
+  }, [txExplorerLink]);
   const receiptIssuedAt = useMemo(() => {
     const iat = receiptPayload?.iat;
     return typeof iat === "number"
@@ -192,6 +203,207 @@ export function PaymentGate({
       ? new Date(exp * 1000).toLocaleString()
       : "-";
   }, [receiptPayload]);
+
+  const getAFlowIcon = (id: string) => {
+    switch (id) {
+      case "provider-402":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/402.svg?v=2#icon" />
+          </svg>
+        );
+      case "intent-create":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/intent-doc.svg?v=2#icon" />
+          </svg>
+        );
+      case "intent-sign":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/intent-sign.svg?v=2#icon" />
+          </svg>
+        );
+      case "intent-verify":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/intent-verify.svg?v=2#icon" />
+          </svg>
+        );
+      case "waas-pay":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/waas-wallet.svg?v=2#icon" />
+          </svg>
+        );
+      case "receipt-mint":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/receipt-hash.svg?v=2#icon" />
+          </svg>
+        );
+      case "provider-access":
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <use href="/icons/access-gate.svg?v=2#icon" />
+          </svg>
+        );
+      default:
+        return (
+          <svg viewBox="0 0 256 256" className="h-7 w-7" aria-hidden="true">
+            <circle cx="128" cy="128" r="96" fill="currentColor" fillOpacity="0.12" />
+            <circle cx="128" cy="128" r="96" fill="none" stroke="currentColor" strokeWidth="12" />
+          </svg>
+        );
+    }
+  };
+
+  const getOwnerBadge = (id: string) => {
+    const ownerMap: Record<string, string> = {
+      "provider-402": "Provider",
+      "intent-create": "Agent",
+      "intent-sign": "Agent/用户",
+      "intent-verify": "Billing",
+      "waas-pay": "Agent/钱包",
+      "receipt-mint": "Billing",
+      "provider-access": "Provider",
+    };
+    return ownerMap[id] ?? "";
+  };
+
+  const getAFlowStatusLabel = (status: "pending" | "running" | "success" | "error") => {
+    switch (status) {
+      case "running":
+        return "进行中";
+      case "error":
+        return "失败";
+      default:
+        return "";
+    }
+  };
+
+  const renderReceiptCard = () => (
+    <div className="rounded-3xl bg-[#5bb1e6] px-6 py-10">
+      <div className="relative mx-auto max-w-2xl rounded-3xl bg-white px-8 pb-8 pt-10 text-slate-900 shadow-[0_30px_60px_rgba(15,23,42,0.25)]">
+        <div
+          className="absolute -top-4 left-0 right-0 h-8"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 16px 16px, #5bb1e6 16px, transparent 17px)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+       
+        <div className="mt-2 text-center text-4xl font-bold tracking-tight">
+          RECEIPT
+        </div>
+
+        <div className="mt-6 h-1 w-full bg-slate-900" />
+        <div className="py-4 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+              Total
+            </div>
+            <div className="text-3xl font-semibold">
+              {amountInput} {currency}
+            </div>
+          </div>
+          <div className="text-right text-xs text-slate-500">
+            <div>Provider name</div>
+            <div className="text-[11px] text-slate-400">Finyx Provider</div>
+            <div className="mt-2">创建时间</div>
+            <div className="text-[11px] text-slate-400">{receiptIssuedAt}</div>
+            <div className="mt-2">On-chain Tx</div>
+            {txExplorerLink ? (
+              <a
+                href={txExplorerLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-slate-500 hover:text-slate-700"
+              >
+                View on explorer
+              </a>
+            ) : (
+              <div className="text-[11px] text-slate-400">-</div>
+            )}
+          </div>
+        </div>
+        <div className="h-1 w-full bg-slate-900" />
+
+        <div className="mt-6 border-t border-dashed border-slate-200 pt-4 text-xs text-slate-600">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                Wallet
+              </div>
+              <div className="mt-1 font-mono text-[11px]">
+                {walletAddress
+                  ? `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`
+                  : "Not connected"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                Wallet Owner
+              </div>
+              <div className="mt-1 text-[11px]">
+                {wallet?.owner ?? "-"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                Chain
+              </div>
+              <div className="mt-1 text-[11px]">
+                {wallet?.chain ?? "unknown"}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                Auth
+              </div>
+              <div className="mt-1 text-[11px]">
+                {intentAuthorizationToken
+                  ? "intent"
+                  : delegationToken
+                    ? "delegation"
+                    : "-"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+     
+
+        <div className="mt-6 flex flex-col items-center">
+          <div className="text-[10px] uppercase tracking-[0.35em] text-center text-slate-400">
+            On-chain Tx QR
+          </div>
+          {txExplorerQrDataUrl ? (
+            <img
+              src={txExplorerQrDataUrl}
+              alt="On-chain tx QR code"
+              className="mt-2 h-36 w-36 rounded-xl border border-slate-200 bg-white p-2"
+            />
+          ) : (
+            <div className="mt-2 h-36 w-36 rounded-xl border border-slate-200 bg-slate-200" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderReceiptThumbnail = () => (
+    <button
+      type="button"
+      onClick={() => setIsReceiptModalOpen(true)}
+      className="relative h-[120px] w-40 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+    >
+      <div className="absolute left-1/2 top-2 w-[300px] -translate-x-1/2 scale-[0.42] origin-top">
+        {renderReceiptCard()}
+      </div>
+    </button>
+  );
 
   const resolveAuthHashForMessage = (message: string | null) => {
     if (!message) {
@@ -827,7 +1039,7 @@ export function PaymentGate({
           ...prev,
           {
             flow: "A",
-            step: "触发 402",
+            step: "服务返回 402（Payment Required）",
             data: providerFirst.data,
             timestamp: Date.now(),
           },
@@ -839,14 +1051,14 @@ export function PaymentGate({
       const intentResult = await createBillingIntent();
       if (!intentResult?.payment_intent_id) {
         updateStep("intent-create", "error");
-        setAFlowError("生成 intent 失败");
+        setAFlowError("Agent 生成支付意图失败");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "A",
-          step: "生成 intent",
+          step: "Agent 生成支付意图",
           data: {
             payment_intent_id: intentResult.payment_intent_id,
             intent_message: intentResult.intent_message,
@@ -862,14 +1074,14 @@ export function PaymentGate({
       const signature = await signIntent(intentResult?.intent_message ?? null);
       if (!signature) {
         updateStep("intent-sign", "error");
-        setAFlowError("签名 intent 失败或被拒绝");
+        setAFlowError("自动授权 / 交互授权失败或被拒绝");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "A",
-          step: "签名 intent",
+          step: "自动授权 / 交互授权",
           data: { signature, memo_tx: signature },
           timestamp: Date.now(),
         },
@@ -883,14 +1095,14 @@ export function PaymentGate({
       );
       if (!verifyResult?.token) {
         updateStep("intent-verify", "error");
-        setAFlowError("intent 验签失败");
+        setAFlowError("系统验证支付授权失败");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "A",
-          step: "intent 验签",
+          step: "系统验证支付授权",
           data: {
             authorization_token: verifyResult.token,
             signature_verified: verifyResult.verified,
@@ -904,14 +1116,14 @@ export function PaymentGate({
       const hash = await handlePay();
       if (!hash) {
         updateStep("waas-pay", "error");
-        setAFlowError("WaaS 支付失败或被拒绝");
+        setAFlowError("Agent 自动执行支付失败或被拒绝");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "A",
-          step: "WaaS 支付",
+          step: "Agent 自动执行支付",
           data: { tx_hash: hash },
           timestamp: Date.now(),
         },
@@ -927,14 +1139,14 @@ export function PaymentGate({
       );
       if (!receiptResult?.receipt) {
         updateStep("receipt-mint", "error");
-        setAFlowError("生成 receipt 失败");
+        setAFlowError("生成支付凭证失败");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "A",
-          step: "生成 receipt",
+          step: "生成支付凭证",
           data: {
             receipt: receiptResult.receipt,
             receipt_payload: receiptResult.receipt_payload ?? undefined,
@@ -951,7 +1163,7 @@ export function PaymentGate({
           ...prev,
           {
             flow: "A",
-            step: "凭证放行",
+            step: "服务继续执行（解锁访问）",
             data: providerSecond.data,
             timestamp: Date.now(),
           },
@@ -999,7 +1211,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "触发 402",
+                step: "服务返回 402（Payment Required）",
                 data: result.data,
                 timestamp: Date.now(),
               },
@@ -1015,7 +1227,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "生成 intent",
+                step: "Agent 生成支付意图",
                 data: {
                   payment_intent_id: result.payment_intent_id,
                   intent_message: result.intent_message,
@@ -1036,7 +1248,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "签名 intent",
+                step: "自动授权 / 交互授权",
                 data: { signature, memo_tx: signature },
                 timestamp: Date.now(),
               },
@@ -1052,7 +1264,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "intent 验签",
+                step: "系统验证支付授权",
                 data: {
                   authorization_token: result.token,
                   signature_verified: result.verified,
@@ -1071,7 +1283,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "WaaS 支付",
+                step: "Agent 自动执行支付",
                 data: { tx_hash: hash },
                 timestamp: Date.now(),
               },
@@ -1087,7 +1299,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "生成 receipt",
+                step: "生成支付凭证",
                 data: {
                   receipt: receiptResult.receipt,
                   receipt_payload: receiptResult.receipt_payload ?? undefined,
@@ -1106,7 +1318,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "A",
-                step: "凭证放行",
+                step: "服务继续执行（解锁访问）",
                 data: result.data,
                 timestamp: Date.now(),
               },
@@ -1145,7 +1357,7 @@ export function PaymentGate({
           ...prev,
           {
             flow: "B",
-            step: "触发 402",
+            step: "服务返回 402（Payment Required）",
             data: providerFirst.data,
             timestamp: Date.now(),
           },
@@ -1221,14 +1433,14 @@ export function PaymentGate({
       const hash = await handlePay();
       if (!hash) {
         updateBStepStatus("waas-pay", "error");
-        setBFlowError("WaaS 支付失败或被拒绝");
+        setBFlowError("Agent 自动执行支付失败或被拒绝");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "B",
-          step: "WaaS 支付",
+          step: "Agent 自动执行支付",
           data: { tx_hash: hash },
           timestamp: Date.now(),
         },
@@ -1244,14 +1456,14 @@ export function PaymentGate({
       );
       if (!receiptResult?.receipt) {
         updateBStepStatus("receipt-mint", "error");
-        setBFlowError("生成 receipt 失败");
+        setBFlowError("生成支付凭证失败");
         return;
       }
       setStepResults((prev) => [
         ...prev,
         {
           flow: "B",
-          step: "生成 receipt",
+          step: "生成支付凭证",
           data: {
             receipt: receiptResult.receipt,
             receipt_payload: receiptResult.receipt_payload ?? undefined,
@@ -1268,7 +1480,7 @@ export function PaymentGate({
           ...prev,
           {
             flow: "B",
-            step: "凭证放行",
+            step: "服务继续执行（解锁访问）",
             data: providerSecond.data,
             timestamp: Date.now(),
           },
@@ -1298,7 +1510,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "B",
-                step: "触发 402",
+                step: "服务返回 402（Payment Required）",
                 data: result.data,
                 timestamp: Date.now(),
               },
@@ -1367,7 +1579,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "B",
-                step: "WaaS 支付",
+                step: "Agent 自动执行支付",
                 data: { tx_hash: hash },
                 timestamp: Date.now(),
               },
@@ -1383,7 +1595,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "B",
-                step: "生成 receipt",
+                step: "生成支付凭证",
                 data: {
                   receipt: receiptResult.receipt,
                   receipt_payload: receiptResult.receipt_payload ?? undefined,
@@ -1402,7 +1614,7 @@ export function PaymentGate({
               ...prev,
               {
                 flow: "B",
-                step: "凭证放行",
+                step: "服务继续执行（解锁访问）",
                 data: result.data,
                 timestamp: Date.now(),
               },
@@ -1424,65 +1636,313 @@ export function PaymentGate({
     }
   };
 
+  const topLifecycleIds = [
+    "provider-402",
+    "intent-create",
+    "intent-sign",
+    "intent-verify",
+  ] as const;
+  const bottomLifecycleIds = [
+    "waas-pay",
+    "receipt-mint",
+    "provider-access",
+  ] as const;
+  const topLifecycleSteps = aFlowSteps.filter((step) =>
+    topLifecycleIds.includes(step.id as (typeof topLifecycleIds)[number])
+  );
+  const bottomLifecycleSteps = aFlowSteps.filter((step) =>
+    bottomLifecycleIds.includes(step.id as (typeof bottomLifecycleIds)[number])
+  );
+
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <h4 className="text-sm font-semibold text-slate-900">A 流程（intent）</h4>
-        <p className="mt-1 text-xs text-slate-500">
-          一键串联 A 流程；每个节点也支持手动重试。
-        </p>
-        <p className="mt-1 text-[11px] text-slate-400">
-          用户对单次支付意图签名，Billing 验签后签发 receipt。
-        </p>
-        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-7">
-          <button
-            onClick={runAFlow}
-            disabled={isAutoRunning}
-            className={cn(
-              "rounded-full px-3 py-2 text-[11px] font-semibold transition-all",
-              isAutoRunning
-                ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                : "bg-slate-900 text-white hover:bg-slate-800"
-            )}
-          >
-            A) 一键流程
-          </button>
-        </div>
-        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-7">
-          {aFlowSteps.map((step) => {
-            const isDisabled = isAutoRunning || manualStepRunning === step.id;
-            return (
+      <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_12px_24px_rgba(15,23,42,0.06)]">
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+                Agent 驱动的 402 自动支付流程
+              </div>
+              {/* <h4 className="mt-2 text-sm font-semibold text-slate-900">
+                Agent 驱动的 402 自动支付流程
+              </h4> */}
+              <p className="mt-1 text-[11px] text-[#23407A]">
+                <span className="inline-flex -ml-1 rounded-md bg-[#D8E3F6] px-2 py-1 font-semibold">
+                  当服务返回 HTTP 402 时，Agent 会自动识别支付需求，完成支付并恢复原始请求，全程无需用户手动操作。
+                </span>
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
               <button
-                key={step.id}
-                onClick={() => runManualStep(step.id)}
-                disabled={isDisabled}
+                onClick={runAFlow}
+                disabled={isAutoRunning}
                 className={cn(
-                  "rounded-full px-3 py-2 text-[11px] font-semibold text-center w-full transition-all",
-                  step.status === "pending" && "bg-slate-200 text-slate-400",
-                  step.status === "running" && "bg-amber-200 text-amber-800",
-                  step.status === "success" && "bg-emerald-500 text-white",
-                  step.status === "error" && "bg-red-500 text-white",
-                  isDisabled ? "cursor-not-allowed opacity-70" : "hover:opacity-90"
+                  "rounded-full px-4 py-2 text-[11px] font-semibold whitespace-nowrap transition-all",
+                  isAutoRunning
+                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-slate-900 text-white hover:bg-slate-800"
                 )}
               >
-                {step.label}
+                A) 一键流程
               </button>
-            );
-          })}
+              <span className="text-[11px] text-slate-400 sm:translate-y-[1px]">
+                点击任意节点可单独重试
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-6 space-y-5 overflow-x-auto pb-2">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                <span className="h-1 w-6 rounded-full bg-blue-500/70" />
+                Agent 决策与支付授权流程
+              </div>
+              <div className="mt-3 flex flex-nowrap items-center gap-3 min-w-[860px]">
+                {topLifecycleSteps.map((step, index) => {
+                  const isDisabled =
+                    isAutoRunning || manualStepRunning === step.id;
+                  const isRunning = step.status === "running";
+                  const isSuccess = step.status === "success";
+                  const isError = step.status === "error";
+                  const iconTone = isSuccess
+                    ? "text-blue-700 bg-blue-100 border-blue-200"
+                    : isRunning
+                      ? "text-blue-700 bg-blue-50 border-blue-200"
+                      : isError
+                        ? "text-rose-600 bg-rose-50 border-rose-200"
+                        : "text-slate-400 bg-slate-50 border-slate-200";
+                  const nodeTone = isSuccess
+                    ? "bg-blue-50 border-blue-200 text-slate-800"
+                    : isRunning
+                      ? "bg-blue-50 border-blue-200 text-slate-800"
+                      : isError
+                        ? "bg-rose-50 border-rose-200 text-rose-700"
+                        : "bg-white border-slate-200 text-slate-500";
+                  const connectorTone = isSuccess
+                    ? "flow-connector flow-connector-solid"
+                    : isRunning
+                      ? "flow-connector"
+                      : isError
+                        ? "flow-connector-muted"
+                        : "flow-connector flow-connector-muted";
+                  const dotState = isSuccess
+                    ? "flow-dot-filled"
+                    : isRunning
+                      ? "flow-dot-active"
+                      : isError
+                        ? "flow-dot-idle"
+                        : "flow-dot-idle";
+                  return (
+                    <div key={step.id} className="flex items-center gap-3">
+                      <button
+                        onClick={() => runManualStep(step.id)}
+                        disabled={isDisabled}
+                        className={cn(
+                          "relative w-44 rounded-2xl border px-4 pb-4 pt-10 text-left transition-all",
+                          nodeTone,
+                          isRunning && "flow-node-active",
+                          isDisabled
+                            ? "cursor-not-allowed opacity-70"
+                            : "hover:-translate-y-0.5 hover:shadow-md"
+                        )}
+                      >
+                        <span className="absolute left-2 top-2 rounded-md border border-current/20 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-current/70">
+                          {getOwnerBadge(step.id)}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={cn(
+                              "flex h-12 w-12 items-center justify-center rounded-2xl border",
+                              iconTone
+                            )}
+                          >
+                            {getAFlowIcon(step.id)}
+                          </div>
+                          <div className="text-xs font-semibold text-current">
+                            {step.id === "provider-402" ? (
+                              <>
+                                <div>服务返回 402</div>
+                                <div className="text-[10px] font-medium text-current/80">
+                                  Payment Required
+                                </div>
+                              </>
+                            ) : (
+                              step.label
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      {index < topLifecycleSteps.length - 1 ? (
+                        <div className="flex items-center gap-2">
+                          <div className={cn("h-2 w-12 rounded-full", connectorTone)} />
+                          <div className={cn("flow-dot", dotState)} />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                <span className="h-1 w-6 rounded-full bg-blue-500/30" />
+                Agent 自动支付执行
+              </div>
+              <div className="mt-3 flex flex-nowrap items-center gap-3 min-w-[600px]">
+                {bottomLifecycleSteps.map((step, index) => {
+                  const isDisabled =
+                    isAutoRunning || manualStepRunning === step.id;
+                  const isRunning = step.status === "running";
+                  const isSuccess = step.status === "success";
+                  const isError = step.status === "error";
+                  const iconTone = isSuccess
+                    ? "text-blue-700 bg-blue-100 border-blue-200"
+                    : isRunning
+                      ? "text-blue-700 bg-blue-50 border-blue-200"
+                      : isError
+                        ? "text-rose-600 bg-rose-50 border-rose-200"
+                        : "text-slate-400 bg-slate-50 border-slate-200";
+                  const nodeTone = isSuccess
+                    ? "bg-blue-50 border-blue-200 text-slate-800"
+                    : isRunning
+                      ? "bg-blue-50 border-blue-200 text-slate-800"
+                      : isError
+                        ? "bg-rose-50 border-rose-200 text-rose-700"
+                        : "bg-white border-slate-200 text-slate-500";
+                  const connectorTone = isSuccess
+                    ? "flow-connector flow-connector-solid"
+                    : isRunning
+                      ? "flow-connector"
+                      : isError
+                        ? "flow-connector-muted"
+                        : "flow-connector flow-connector-muted";
+                  const dotState = isSuccess
+                    ? "flow-dot-filled"
+                    : isRunning
+                      ? "flow-dot-active"
+                      : isError
+                        ? "flow-dot-idle"
+                        : "flow-dot-idle";
+                  return (
+                    <div key={step.id} className="flex items-center gap-3">
+                      <button
+                        onClick={() => runManualStep(step.id)}
+                        disabled={isDisabled}
+                        className={cn(
+                          "relative w-52 rounded-2xl border px-3 pb-4 pt-9 text-left transition-all",
+                          nodeTone,
+                          isDisabled
+                            ? "cursor-not-allowed opacity-70"
+                            : "hover:-translate-y-0.5 hover:shadow-sm"
+                        )}
+                      >
+                        <span className="absolute left-2 top-2 rounded-md border border-current/20 bg-white/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-current/70">
+                          {getOwnerBadge(step.id)}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={cn(
+                              "flex h-10 w-10 items-center justify-center rounded-2xl border",
+                              iconTone
+                            )}
+                          >
+                            {getAFlowIcon(step.id)}
+                          </div>
+                          <div className="text-[11px] font-semibold text-current whitespace-nowrap">
+                            {step.label}
+                          </div>
+                        </div>
+                      </button>
+                      {index < bottomLifecycleSteps.length - 1 ? (
+                        <div className="flex items-center gap-2">
+                          <div className={cn("h-1.5 w-10 rounded-full", connectorTone)} />
+                          <div className={cn("flow-dot", dotState)} />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {receipt ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div>
+                <div className="text-xs font-semibold text-slate-700">
+                  Receipt issued
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Receipt JWT minted after verification and payment.
+                </div>
+              </div>
+              {renderReceiptThumbnail()}
+            </div>
+          ) : null}
+
+          {aFlowError ? (
+            <div className="mt-3 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700 shadow-sm">
+              <svg
+                viewBox="0 0 24 24"
+                className="mt-0.5 h-4 w-4 flex-shrink-0"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 3l9 16H3L12 3z"
+                  fill="currentColor"
+                  fillOpacity="0.15"
+                />
+                <path
+                  d="M12 3l9 16H3L12 3z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M12 9v4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+                <circle cx="12" cy="16.5" r="1" fill="currentColor" />
+              </svg>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide">
+                  Intent Flow Error
+                </div>
+                <div className="mt-1 text-xs font-semibold">{aFlowError}</div>
+              </div>
+            </div>
+          ) : null}
         </div>
-        {aFlowError ? (
-          <div className="mt-2 text-xs text-red-600">{aFlowError}</div>
-        ) : null}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <h4 className="text-sm font-semibold text-slate-900">B 流程（delegation）</h4>
-        <p className="mt-1 text-xs text-slate-500">
-          一键串联 B 流程；每个节点也支持手动重试。
-        </p>
-        <p className="mt-1 text-[11px] text-slate-400">
-          用户一次性委托额度给 Agent，多次支付复用 delegation。
-        </p>
+      <details
+        className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+        open={isBFlowOpen}
+        onToggle={(event) =>
+          setIsBFlowOpen((event.currentTarget as HTMLDetailsElement).open)
+        }
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">
+              B 流程（delegation）
+            </h4>
+            <p className="mt-1 text-xs text-slate-500">
+              一键串联 B 流程；每个节点也支持手动重试。
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              用户一次性委托额度给 Agent，多次支付复用 delegation。
+            </p>
+          </div>
+          <span className="text-[11px] text-slate-400">
+            {isBFlowOpen ? "点击收回" : "点击展开"}
+          </span>
+        </summary>
         <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-7">
           <button
             onClick={runBFlow}
@@ -1522,40 +1982,52 @@ export function PaymentGate({
         {bFlowError ? (
           <div className="mt-2 text-xs text-red-600">{bFlowError}</div>
         ) : null}
-      </div>
+      </details>
 
       <div className="mt-5 grid grid-cols-1 lg:grid-cols-1 gap-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-slate-700">
+        <details
+          className="rounded-2xl border border-slate-200 bg-white p-4"
+          open={isStepResultsOpen}
+          onToggle={(event) =>
+            setIsStepResultsOpen((event.currentTarget as HTMLDetailsElement).open)
+          }
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700">
               Step results
-            </h4>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setResultTab("A")}
-                className={cn(
-                  "rounded-full px-3 py-1 text-[11px] font-semibold transition-all",
-                  resultTab === "A"
-                    ? "bg-slate-900 text-white"
-                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
-                )}
-              >
-                A
-              </button>
-              <button
-                onClick={() => setResultTab("B")}
-                className={cn(
-                  "rounded-full px-3 py-1 text-[11px] font-semibold transition-all",
-                  resultTab === "B"
-                    ? "bg-slate-900 text-white"
-                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
-                )}
-              >
-                B
-              </button>
+            </span>
+            <span className="text-[11px] text-slate-400">
+              {isStepResultsOpen ? "点击收回" : "点击展开"}
+            </span>
+          </summary>
+          <div className="mt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setResultTab("A")}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-[11px] font-semibold transition-all",
+                    resultTab === "A"
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  A
+                </button>
+                <button
+                  onClick={() => setResultTab("B")}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-[11px] font-semibold transition-all",
+                    resultTab === "B"
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+                  )}
+                >
+                  B
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="mt-2 space-y-2">
+            <div className="mt-2 space-y-2">
             {stepResults.filter((entry) => entry.flow === resultTab).length ? (
               stepResults
                 .filter((entry) => entry.flow === resultTab)
@@ -1582,6 +2054,7 @@ export function PaymentGate({
                 No step results yet.
               </div>
             )}
+          </div>
           </div>
 
           <h4 className="mt-4 text-xs font-semibold text-slate-700">
@@ -1648,117 +2121,29 @@ export function PaymentGate({
                 View transaction
               </a>
             ) : null}
-            <div className="break-all">
-              Receipt: {receipt ? `${receipt.slice(0, 32)}...` : "-"}
-            </div>
           </div>
-        </div>
+        </details>
       </div>
 
-      <div className="mt-6 rounded-3xl bg-[#5bb1e6] px-6 py-10">
-        <div className="relative mx-auto max-w-2xl rounded-3xl bg-white px-8 pb-8 pt-10 text-slate-900 shadow-[0_30px_60px_rgba(15,23,42,0.25)]">
-          <div
-            className="absolute -top-4 left-0 right-0 h-8"
-            style={{
-              backgroundImage:
-                "radial-gradient(circle at 16px 16px, #5bb1e6 16px, transparent 17px)",
-              backgroundSize: "32px 32px",
-            }}
-          />
-          <div className="text-center text-[11px] uppercase tracking-[0.5em] text-slate-400">
-            G R 8 · V I B E S
-          </div>
-          <div className="mt-2 text-center text-4xl font-bold tracking-tight">
-            RECEIPT
-          </div>
-         
-
-          
-
-          <div className="mt-6 h-1 w-full bg-slate-900" />
-          <div className="py-4 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                Total
-              </div>
-              <div className="text-3xl font-semibold">
-                {amountInput} {currency}
-              </div>
+      {isReceiptModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/60 px-4 py-10 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative w-full max-w-xl my-auto">
+            <div className="absolute right-4 top-4 z-10">
+              <button
+                onClick={() => setIsReceiptModalOpen(false)}
+                className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-[#041126] shadow-lg"
+              >
+                Close
+              </button>
             </div>
-            <div className="text-right text-xs text-slate-500">
-              <div>Finyx Provider</div>
-              <div>#{paymentIntentId ?? "-"}</div>
-              <div>{receiptIssuedAt}</div>
-            </div>
-          </div>
-          <div className="h-1 w-full bg-slate-900" />
-
-          <div className="mt-6 border-t border-dashed border-slate-200 pt-4 text-xs text-slate-600">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                  Wallet
-                </div>
-                <div className="mt-1 font-mono text-[11px]">
-                  {walletAddress || "Not connected"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                  Wallet Owner
-                </div>
-                <div className="mt-1 text-[11px]">
-                  {wallet?.owner ?? "-"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                  Chain
-                </div>
-                <div className="mt-1 text-[11px]">
-                  {wallet?.chain ?? "unknown"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                  Auth
-                </div>
-                <div className="mt-1 text-[11px]">
-                  {intentAuthorizationToken
-                    ? "intent"
-                    : delegationToken
-                      ? "delegation"
-                      : "-"}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center text-[11px] text-slate-400">
-            {receipt ? "RECEIPT (JWT)" : "No receipt issued yet."}
-          </div>
-          {receipt ? (
-            <div className="mt-2 rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600">
-              <span className="font-mono break-all">{receipt}</span>
-            </div>
-          ) : null}
-
-          <div className="mt-6 flex flex-col items-center">
-            <div className="text-[10px] uppercase tracking-[0.35em] text-center text-slate-400">
-              QR Code
-            </div>
-            {receiptQrDataUrl ? (
-              <img
-                src={receiptQrDataUrl}
-                alt="Receipt QR code"
-                className="mt-2 h-36 w-36 rounded-xl border border-slate-200 bg-white p-2"
-              />
-            ) : (
-              <div className="mt-2 h-36 w-36 rounded-xl border border-slate-200 bg-slate-200" />
-            )}
+            {renderReceiptCard()}
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
