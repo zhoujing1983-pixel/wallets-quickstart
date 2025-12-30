@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "agent:dev": "tsx watch app/voltagent.ts",
-    "agent:start": "tsx app/voltagent.ts",
-    "agent:openai": "tsx app/voltagentopenai.ts",
-    "agent:openai:local": "tsx app/voltagentopenai.ts --local"
+    "agent:dev": "tsx watch scripts/voltagent.ts",
+    "agent:start": "tsx scripts/voltagent.ts",
+    "agent:openai": "tsx scripts/voltagentopenai.ts",
+    "agent:openai:local": "tsx scripts/voltagentopenai.ts --local",
+    "treasure:wallet": "tsx scripts/treasureWallet.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.51",

@@ -1,4 +1,4 @@
-import { OnrampStatus } from "./useCrossmintOnramp";
+import { OnrampStatus } from "@/lib/useCrossmintOnramp";
 
 export type Order = {
   status: OnrampStatus;

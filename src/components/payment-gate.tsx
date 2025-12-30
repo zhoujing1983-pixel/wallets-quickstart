@@ -441,6 +441,14 @@ export function PaymentGate({
     setInternalAmountInput(value);
   };
 
+  const appendAFlowError = (message: string) => {
+    setAFlowError((prev) => (prev ? `${message}\n${prev}` : message));
+  };
+
+  const reportIntentFlowError = (message: string) => {
+    appendAFlowError(message);
+  };
+
   const resetCrossmintSession = () => {
     if (isResettingSession) {
       return;
@@ -466,7 +474,7 @@ export function PaymentGate({
 
   const signWithWallet = async (message: string): Promise<string | null> => {
     if (!wallet) {
-      alert("Wallet not connected.");
+      reportIntentFlowError("Wallet not connected.");
       return null;
     }
 
@@ -532,12 +540,12 @@ export function PaymentGate({
                 : null;
           return signature;
         } catch (error) {
-          alert(`Memo signature failed: ${error}`);
+          reportIntentFlowError(`Memo signature failed: ${error}`);
           return null;
         }
       }
 
-      alert("Wallet does not support signMessage.");
+      reportIntentFlowError("Wallet does not support signMessage.");
       return null;
     }
     try {
@@ -589,14 +597,14 @@ export function PaymentGate({
       if (error instanceof Error && error.name === "AuthRejectedError") {
         return null;
       }
-      alert(`Signature failed: ${error}`);
+      reportIntentFlowError(`Signature failed: ${error}`);
       return null;
     }
   };
 
   const handleManualApprove = async () => {
     if (!wallet) {
-      alert("Wallet not connected.");
+      reportIntentFlowError("Wallet not connected.");
       return;
     }
     setLastApproveError(null);
@@ -751,7 +759,7 @@ export function PaymentGate({
   const signIntent = async (messageOverride?: string | null) => {
     const message = messageOverride ?? intentMessage;
     if (!message) {
-      alert("Create a payment intent first.");
+      reportIntentFlowError("Create a payment intent first.");
       return null;
     }
     setIsSigningIntent(true);
@@ -768,7 +776,7 @@ export function PaymentGate({
     const token = tokenOverride ?? intentToken;
     const signature = signatureOverride ?? intentSignature;
     if (!token || !signature) {
-      alert("Sign the intent first.");
+      reportIntentFlowError("Sign the intent first.");
       return null;
     }
     setIsVerifyingIntent(true);
@@ -807,7 +815,7 @@ export function PaymentGate({
         error: "intent_verification_error",
         details: String(error),
       });
-      setAFlowError(String(error));
+      appendAFlowError(String(error));
       return null;
     } finally {
       setIsVerifyingIntent(false);
@@ -877,7 +885,7 @@ export function PaymentGate({
   const signDelegation = async (messageOverride?: string | null) => {
     const message = messageOverride ?? delegationMessage;
     if (!message) {
-      alert("Create a delegation challenge first.");
+      reportIntentFlowError("Create a delegation challenge first.");
       return null;
     }
     setIsSigningDelegation(true);
@@ -894,7 +902,7 @@ export function PaymentGate({
     const challenge = challengeOverride ?? delegationChallengeToken;
     const signature = signatureOverride ?? delegationSignature;
     if (!challenge || !signature) {
-      alert("Sign the delegation message first.");
+      reportIntentFlowError("Sign the delegation message first.");
       return null;
     }
     setIsMintingDelegation(true);
@@ -940,19 +948,19 @@ export function PaymentGate({
 
   const handlePay = async () => {
     if (!wallet) {
-      alert("Wallet not connected.");
+      reportIntentFlowError("Wallet not connected.");
       return null;
     }
     if (!providerWallet) {
-      alert("Set NEXT_PUBLIC_PROVIDER_WALLET to a valid address.");
+      reportIntentFlowError("Set NEXT_PUBLIC_PROVIDER_WALLET to a valid address.");
       return null;
     }
     if (currency !== "USDC") {
-      alert("Current WaaS demo supports USDC only.");
+      reportIntentFlowError("Current WaaS demo supports USDC only.");
       return null;
     }
     if (!amount) {
-      alert("Enter a valid amount.");
+      reportIntentFlowError("Enter a valid amount.");
       return null;
     }
 
@@ -980,7 +988,7 @@ export function PaymentGate({
       if (error instanceof Error && error.name === "AuthRejectedError") {
         return null;
       }
-      alert(`Payment failed: ${error}`);
+      reportIntentFlowError(`Payment failed: ${error}`);
       return null;
     } finally {
       setIsPaying(false);
@@ -998,11 +1006,11 @@ export function PaymentGate({
     const intentAuth = intentAuthOverride ?? intentAuthorizationToken;
     const delegation = delegationOverride ?? delegationToken;
     if (!intentId) {
-      alert("Create a payment intent first.");
+      reportIntentFlowError("Create a payment intent first.");
       return null;
     }
     if (!txHashValue) {
-      alert("Enter the transaction hash.");
+      reportIntentFlowError("Enter the transaction hash.");
       return null;
     }
     setIsMinting(true);
@@ -1085,7 +1093,7 @@ export function PaymentGate({
       const intentResult = await createBillingIntent();
       if (!intentResult?.payment_intent_id) {
         updateStep("intent-create", "error");
-        setAFlowError("Agent 生成支付意图失败");
+        appendAFlowError("Agent 生成支付意图失败");
         return;
       }
       setStepResults((prev) => [
@@ -1108,7 +1116,7 @@ export function PaymentGate({
       const signature = await signIntent(intentResult?.intent_message ?? null);
       if (!signature) {
         updateStep("intent-sign", "error");
-        setAFlowError("自动授权 / 交互授权失败或被拒绝");
+        appendAFlowError("自动授权 / 交互授权失败或被拒绝");
         return;
       }
       setStepResults((prev) => [
@@ -1129,7 +1137,7 @@ export function PaymentGate({
       );
       if (!verifyResult?.token) {
         updateStep("intent-verify", "error");
-        setAFlowError("系统验证支付授权失败");
+        appendAFlowError("系统验证支付授权失败");
         return;
       }
       setStepResults((prev) => [
@@ -1150,7 +1158,7 @@ export function PaymentGate({
       const hash = await handlePay();
       if (!hash) {
         updateStep("waas-pay", "error");
-        setAFlowError("Agent 自动执行支付失败或被拒绝");
+        appendAFlowError("Agent 自动执行支付失败或被拒绝");
         return;
       }
       setStepResults((prev) => [
@@ -1173,7 +1181,7 @@ export function PaymentGate({
       );
       if (!receiptResult?.receipt) {
         updateStep("receipt-mint", "error");
-        setAFlowError("生成支付凭证失败");
+        appendAFlowError("生成支付凭证失败");
         return;
       }
       setStepResults((prev) => [
@@ -1365,7 +1373,7 @@ export function PaymentGate({
       }
       if (!ok) {
         updateStepStatus(id, "error");
-        setAFlowError(`步骤失败：${id}`);
+        appendAFlowError(`步骤失败：${id}`);
         return;
       }
       updateStepStatus(id, "success");
@@ -1979,7 +1987,9 @@ export function PaymentGate({
                 <div className="text-xs font-semibold uppercase tracking-wide">
                   Intent Flow Error
                 </div>
-                <div className="mt-1 text-xs font-semibold">{aFlowError}</div>
+                <div className="mt-1 whitespace-pre-line text-xs font-semibold">
+                  {aFlowError}
+                </div>
               </div>
             </div>
           ) : null}

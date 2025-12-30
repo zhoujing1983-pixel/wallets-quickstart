@@ -75,5 +75,17 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
    bun dev
    ```
 
+## Project structure
+- `src/app`: Next.js App Router routes, layouts, and styles
+- `src/components`: Reusable UI components
+- `src/lib`: Shared utilities and hooks
+- `src/types`: Shared TypeScript types
+- `scripts`: Agent scripts (run via `npm run agent:*`)
+
+## Agent scripts
+- Start the local agent: `npm run agent:start`
+- Start the OpenAI agent: `npm run agent:openai`
+- Watch mode for local agent: `npm run agent:dev`
+
 ## Using in production
 1. Create a [production Crossmint API key](https://docs.crossmint.com/introduction/platform/api-keys/client-side) and swap it into `NEXT_PUBLIC_FINYX_API_KEY` before you deploy.

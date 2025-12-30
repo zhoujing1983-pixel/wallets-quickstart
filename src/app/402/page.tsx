@@ -1,11 +1,8 @@
 "use client";
 
 import { PaymentGate } from "@/components/payment-gate";
-import { useState } from "react";
 
 export default function Demo402Page() {
-  const [amountInput] = useState("0.01");
-
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <div className="w-full max-w-6xl mx-auto px-4 py-10 flex flex-col gap-8">
@@ -35,7 +32,7 @@ export default function Demo402Page() {
           </div>
         </section>
 
-        <PaymentGate amountInput={amountInput} />
+        <PaymentGate />
       </div>
     </div>
   );
