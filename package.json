@@ -6,28 +6,42 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "agent:dev": "tsx watch app/voltagent.ts",
+    "agent:start": "tsx app/voltagent.ts",
+    "agent:openai": "tsx app/voltagentopenai.ts",
+    "agent:openai:local": "tsx app/voltagentopenai.ts --local"
   },
   "dependencies": {
+    "@ai-sdk/google": "^2.0.51",
+    "@ai-sdk/openai": "^2.0.88",
     "@crossmint/client-sdk-react-ui": "2.6.6",
     "@vercel/analytics": "^1.5.0",
+    "@voltagent/core": "^1.5.2",
+    "@voltagent/server-hono": "^1.2.11",
+    "ai": "^5.0.116",
     "clsx": "^2.1.1",
     "next": "^16.1.0",
+    "ollama-ai-provider-v2": "^1.5.5",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-transition-group": "^4.4.5",
     "tailwind-merge": "^3.0.2",
-    "tw-animate-css": "^1.2.4"
+    "tw-animate-css": "^1.2.4",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.19.27",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-transition-group": "^4.4.12",
+    "@voltagent/cli": "^0.1.17",
     "tailwindcss": "^4",
+    "tsdown": "^0.18.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

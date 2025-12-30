@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@crossmint/client-sdk-react-ui";
 import { SolanaWallet } from "@crossmint/wallets-sdk";
+import Link from "next/link";
 import QRCode from "qrcode";
 import { cn } from "@/lib/utils";
 
@@ -19,13 +20,14 @@ type PaymentGateProps = {
 
 export function PaymentGate({
   amountInput: amountInputProp,
+  onAmountInputChange,
 }: PaymentGateProps) {
   const { wallet } = useWallet();
   const walletAddress = wallet?.address ?? "";
   const providerWallet =
     process.env.NEXT_PUBLIC_PROVIDER_WALLET ?? "";
 
-  const [internalAmountInput] = useState(DEFAULT_AMOUNT);
+  const [internalAmountInput, setInternalAmountInput] = useState(DEFAULT_AMOUNT);
   const amountInput = amountInputProp ?? internalAmountInput;
   const [currency, setCurrency] = useState("USDC");
   const [authSessionId, setAuthSessionId] = useState("");
@@ -115,6 +117,7 @@ export function PaymentGate({
   const [aFlowError, setAFlowError] = useState<string | null>(null);
   const [isStepResultsOpen, setIsStepResultsOpen] = useState(false);
   const [isBFlowOpen, setIsBFlowOpen] = useState(false);
+  const [isResettingSession, setIsResettingSession] = useState(false);
   const [aFlowSteps, setAFlowSteps] = useState<
     Array<{ id: string; label: string; status: "pending" | "running" | "success" | "error" }>
   >([
@@ -429,6 +432,37 @@ export function PaymentGate({
       `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     setAuthSessionId(generated);
   }, [authSessionId]);
+
+  const handleAmountInputChange = (value: string) => {
+    if (onAmountInputChange) {
+      onAmountInputChange(value);
+      return;
+    }
+    setInternalAmountInput(value);
+  };
+
+  const resetCrossmintSession = () => {
+    if (isResettingSession) {
+      return;
+    }
+    setIsResettingSession(true);
+    if (typeof window !== "undefined") {
+      const patterns = [/crossmint/i, /wallets/i, /^cm_/i, /finyx/i];
+      for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+        const key = localStorage.key(i);
+        if (key && patterns.some((pattern) => pattern.test(key))) {
+          localStorage.removeItem(key);
+        }
+      }
+      for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+        const key = sessionStorage.key(i);
+        if (key && patterns.some((pattern) => pattern.test(key))) {
+          sessionStorage.removeItem(key);
+        }
+      }
+      window.location.reload();
+    }
+  };
 
   const signWithWallet = async (message: string): Promise<string | null> => {
     if (!wallet) {
@@ -1671,23 +1705,55 @@ export function PaymentGate({
                   当服务返回 HTTP 402 时，Agent 会自动识别支付需求，完成支付并恢复原始请求，全程无需用户手动操作。
                 </span>
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                  金额输入
+                </span>
+                <input
+                  value={amountInput}
+                  onChange={(event) => handleAmountInputChange(event.target.value)}
+                  className="h-8 w-28 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-900 shadow-sm"
+                  placeholder="0.01"
+                />
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">
+                  {currency}
+                </span>
+                <button
+                  onClick={runAFlow}
+                  disabled={isAutoRunning}
+                  className={cn(
+                    "rounded-full px-4 py-2 text-[11px] font-semibold whitespace-nowrap transition-all",
+                    isAutoRunning
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-[#FF9927] text-slate-900 hover:bg-[#ea8d22]"
+                  )}
+                >
+                一键流程
+                </button>
+                <span className="text-[11px] text-slate-400 sm:translate-y-[1px]">
+                  点击任意节点可单独重试
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <button
-                onClick={runAFlow}
-                disabled={isAutoRunning}
-                className={cn(
-                  "rounded-full px-4 py-2 text-[11px] font-semibold whitespace-nowrap transition-all",
-                  isAutoRunning
-                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                    : "bg-slate-900 text-white hover:bg-slate-800"
-                )}
-              >
-                A) 一键流程
-              </button>
-              <span className="text-[11px] text-slate-400 sm:translate-y-[1px]">
-                点击任意节点可单独重试
-              </span>
+            <div className="flex flex-col items-start gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={resetCrossmintSession}
+                  disabled={isResettingSession}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-semibold text-[#041126] bg-white/90 border border-slate-200 shadow-sm transition hover:bg-white",
+                    isResettingSession ? "opacity-60 cursor-not-allowed" : ""
+                  )}
+                >
+                  {isResettingSession ? "重置中..." : "强制重新验证"}
+                </button>
+                <Link
+                  href="/"
+                  className="flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-semibold text-[#041126] bg-white/90 border border-slate-200 shadow-sm transition hover:bg-white"
+                >
+                  Back to dashboard
+                </Link>
+              </div>
             </div>
           </div>
 
