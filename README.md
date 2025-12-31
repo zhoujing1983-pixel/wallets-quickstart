@@ -87,5 +87,15 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
 - Start the OpenAI agent: `npm run agent:openai`
 - Watch mode for local agent: `npm run agent:dev`
 
+## Qwen (DashScope) setup
+If you want to run the agent on Qwen via the OpenAI-compatible endpoint:
+```
+MODEL_PROVIDER=qwen
+QWEN_API_KEY=your_dashscope_key
+QWEN_MODEL=qwen-plus-latest
+# Optional:
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
 ## Using in production
 1. Create a [production Crossmint API key](https://docs.crossmint.com/introduction/platform/api-keys/client-side) and swap it into `NEXT_PUBLIC_FINYX_API_KEY` before you deploy.
