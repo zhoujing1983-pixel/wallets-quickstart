@@ -5,6 +5,7 @@ import {
   CrossmintAuthProvider,
   CrossmintWalletProvider,
 } from "@crossmint/client-sdk-react-ui";
+import type { LoginMethod } from "@crossmint/client-sdk-react-ui";
 
 const apiKey =
   process.env.NEXT_PUBLIC_FINYX_API_KEY ??
@@ -24,7 +25,7 @@ const customAppearance = {
     accent: "#020617",
   },
 };
-const loginMethods = ["google", "twitter", "web3", "email"] as const;
+const loginMethods: LoginMethod[] = ["google", "twitter", "web3", "email"];
 const termsOfServiceText = (
   <p>
     By continuing, you accept the{" "}
@@ -38,12 +39,7 @@ const termsOfServiceText = (
     , and to receive updates from Finyx.
   </p>
 );
-const createOnLogin = {
-  chain: chain,
-  signer: {
-    type: "email",
-  },
-};
+
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -56,7 +52,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
         <CrossmintWalletProvider
           appearance={customAppearance}
-          createOnLogin={createOnLogin}
+           createOnLogin={{
+            chain: chain,
+            signer: {
+              type: "email",
+            },
+          }}
         >
           {children}
         </CrossmintWalletProvider>
