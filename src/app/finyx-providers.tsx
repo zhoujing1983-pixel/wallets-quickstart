@@ -19,44 +19,41 @@ const resolvedApiKey = apiKey;
 
 const chain = (process.env.NEXT_PUBLIC_CHAIN ?? "solana") as any;
 
-const customAppearance = {
+const finyxAppearance = {
   colors: {
-    accent: "#020617",
-  },
-};
-const loginMethods = ["google", "twitter", "web3", "email"] as const;
-const termsOfServiceText = (
-  <p>
-    By continuing, you accept the{" "}
-    <a
-      href="https://www.finyx.com/legal/terms-of-service"
-      target="_blank"
-      rel="noreferrer"
-    >
-      Wallet&apos;s Terms of Service
-    </a>
-    , and to receive updates from Finyx.
-  </p>
-);
-const createOnLogin = {
-  chain: chain,
-  signer: {
-    type: "email",
+    accent: "#0f172a",
   },
 };
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function FinyxProviders({ children }: { children: React.ReactNode }) {
   return (
     <CrossmintProvider apiKey={resolvedApiKey}>
       <CrossmintAuthProvider
         authModalTitle="Welcome to Finyx"
-        loginMethods={loginMethods}
-        appearance={customAppearance}
-        termsOfServiceText={termsOfServiceText}
+        loginMethods={["google",  "twitter", "web3"]}
+        appearance={finyxAppearance}
+        termsOfServiceText={
+          <p>
+            By continuing, you accept the{" "}
+            <a
+              href="https://www.finyx.com/legal/terms-of-service"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Wallet&apos;s Terms of Service
+            </a>
+            , and to receive updates from Finyx.
+          </p>
+        }
       >
         <CrossmintWalletProvider
-          appearance={customAppearance}
-          createOnLogin={createOnLogin}
+          appearance={finyxAppearance}
+          createOnLogin={{
+            chain: chain,
+            signer: {
+              type: "email",
+            },
+          }}
         >
           {children}
         </CrossmintWalletProvider>

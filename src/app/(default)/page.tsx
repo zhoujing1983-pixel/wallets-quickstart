@@ -12,8 +12,21 @@ export default function Home() {
   const nodeRef = useRef(null);
 
   const isLoggedIn = wallet != null && authStatus === "logged-in";
-  const isLoading =
-    walletStatus === "in-progress" || authStatus === "initializing";
+  const isLoggedOut = authStatus === "logged-out";
+  const isAuthInitialized = authStatus !== "initializing";
+  const isWalletReady = walletStatus !== "in-progress";
+  const isReady = isAuthInitialized && isWalletReady;
+  const shouldShowLanding = isReady && isLoggedOut;
+  const shouldShowDashboard = isLoggedIn;
+  const shouldShowLoading = !shouldShowLanding && !shouldShowDashboard;
+
+  if (shouldShowLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-8 h-8 border-4 border-slate-900 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -27,10 +40,10 @@ export default function Home() {
             unmountOnExit
           >
             <div ref={nodeRef}>
-              {isLoggedIn ? (
+              {shouldShowDashboard ? (
                 <Dashboard />
               ) : (
-                <LandingPage isLoading={isLoading} />
+                <LandingPage isLoading={false} />
               )}
             </div>
           </CSSTransition>
