@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@crossmint/client-sdk-react-ui";
 import Image from "next/image";
 
-export function LogoutButton() {
+type LogoutButtonProps = {
+  hasEmailSession?: boolean;
+  onEmailLogout?: () => void;
+};
+
+export function LogoutButton({
+  hasEmailSession,
+  onEmailLogout,
+}: LogoutButtonProps) {
   const { logout } = useAuth();
   const [shouldLogout, setShouldLogout] = useState(false);
 
@@ -12,12 +20,21 @@ export function LogoutButton() {
     if (!shouldLogout) {
       return;
     }
-    const timer = setTimeout(() => {
-      logout();
-      setShouldLogout(false);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [logout, shouldLogout]);
+    const runLogout = async () => {
+      try {
+        if (hasEmailSession) {
+          await fetch("/api/auth/email/session", { method: "DELETE" });
+          onEmailLogout?.();
+        }
+      } catch (error) {
+        console.warn("Email logout failed", error);
+      } finally {
+        logout();
+        setShouldLogout(false);
+      }
+    };
+    runLogout();
+  }, [hasEmailSession, logout, onEmailLogout, shouldLogout]);
 
   return (
     <button

@@ -5,6 +5,7 @@ import { useAuth } from "@crossmint/client-sdk-react-ui";
 import { isEmailValid, type OAuthProvider } from "@crossmint/common-sdk-auth";
 import { FinyxWalletPicker } from "@/components/finyx-wallet-picker";
 import { EmailOtpModal } from "@/components/email-otp-modal";
+import { useRouter } from "next/navigation";
 
 type EmailOtpState = {
   email: string;
@@ -42,6 +43,7 @@ export function FinyxAuthPanel() {
     loginMethods,
     status,
   } = useAuth();
+  const router = useRouter();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -49,6 +51,7 @@ export function FinyxAuthPanel() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [showWalletPicker, setShowWalletPicker] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
@@ -163,18 +166,29 @@ export function FinyxAuthPanel() {
           code: otp.trim(),
         }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data?.error ?? "Invalid code.");
+        const errorCode = typeof data?.error === "string" ? data.error : "";
+        const errorMessage =
+          errorCode === "code_not_found"
+            ? "Code not found or expired. Please request a new code."
+            : errorCode === "code_expired"
+              ? "Code expired. Please request a new code."
+              : errorCode === "invalid_code"
+                ? "Invalid code. Please try again."
+                : errorCode === "too_many_attempts"
+                  ? "Too many attempts. Please request a new code."
+                  : errorCode === "email_mismatch"
+                    ? "Email mismatch. Please request a new code."
+                    : "Invalid code. Please try again.";
+        setError(errorMessage);
+        return;
       }
-      setSuccess("Email verified successfully.");
-      setEmailOtp(null);
-      setResendAvailableAt(null);
-      setStep("email");
-      setOtp("");
+      setIsRedirecting(true);
+      router.replace("/finyx/dashboard");
     } catch (err) {
       console.error("OTP confirm error", err);
-      setError("Invalid code. Please try again.");
+      setError("Verification failed. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -320,6 +334,12 @@ export function FinyxAuthPanel() {
 
   return (
     <div className="relative w-full max-w-md rounded-[28px] border border-white/60 bg-white/95 p-9 shadow-[0_24px_90px_rgba(15,23,42,0.18)] backdrop-blur">
+      {isRedirecting ? (
+        <div className="flex min-h-[420px] items-center justify-center">
+          <div className="w-8 h-8 border-4 border-slate-900 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <>
       <div className="mb-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.45em] text-slate-500">
           Finyx Wallet Access
@@ -469,14 +489,21 @@ export function FinyxAuthPanel() {
           otp={otp}
           resendSeconds={resendSeconds}
           isSubmitting={isSubmitting || status === "in-progress"}
+          error={error}
           onClose={() => {
             setStep("email");
             setOtp("");
+            setError(null);
           }}
-          onOtpChange={setOtp}
+          onOtpChange={(value) => {
+            setOtp(value);
+            setError(null);
+          }}
           onConfirm={handleConfirmOtp}
           onResend={handleResendOtp}
         />
+      )}
+        </>
       )}
     </div>
   );

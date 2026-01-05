@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
 
 type EmailOtpModalProps = {
@@ -9,6 +9,7 @@ type EmailOtpModalProps = {
   otp: string;
   resendSeconds: number;
   isSubmitting: boolean;
+  error?: string | null;
   onClose: () => void;
   onOtpChange: (value: string) => void;
   onConfirm: () => void;
@@ -21,6 +22,7 @@ export function EmailOtpModal({
   otp,
   resendSeconds,
   isSubmitting,
+  error,
   onClose,
   onOtpChange,
   onConfirm,
@@ -30,25 +32,68 @@ export function EmailOtpModal({
 
   const otpChars = useMemo(() => otp.split("").slice(0, 6), [otp]);
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const [highlightFilled, setHighlightFilled] = useState(false);
+  const [lastFocusedIndex, setLastFocusedIndex] = useState(0);
 
   useEffect(() => {
     if (!open) return;
+    if (otpChars.some(Boolean)) return;
     inputRefs.current[0]?.focus();
   }, [open, otpChars]);
+
+  useEffect(() => {
+    if (!highlightFilled) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        handleHighlightInput();
+        return;
+      }
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        handleHighlightInput(event.key);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [highlightFilled]);
+
+  const focusInput = (index: number) => {
+    const target = inputRefs.current[index];
+    if (!target) return;
+    setLastFocusedIndex(index);
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => target.focus());
+    } else {
+      setTimeout(() => target.focus(), 0);
+    }
+  };
+
+  const handleHighlightInput = (digit?: string) => {
+    const nextValue = digit ? digit : "";
+    onOtpChange(nextValue);
+    setHighlightFilled(false);
+    focusInput(digit ? 1 : 0);
+  };
 
   const setOtpAt = (index: number, value: string) => {
     const sanitized = value.replace(/\D/g, "");
     if (!sanitized) return;
+    const startIndex = highlightFilled ? getFirstEmptyIndex() : index;
     const current = Array.from({ length: 6 }).map((_, i) => otpChars[i] ?? "");
     sanitized.split("").forEach((char, offset) => {
-      const targetIndex = index + offset;
+      const targetIndex = startIndex + offset;
       if (targetIndex < current.length) {
         current[targetIndex] = char;
       }
     });
     onOtpChange(current.join(""));
-    const nextIndex = Math.min(index + sanitized.length, 5);
-    inputRefs.current[nextIndex]?.focus();
+    if (sanitized.length > 0) {
+      const nextIndex = Math.min(startIndex + sanitized.length, 5);
+      if (nextIndex != startIndex) {
+        focusInput(nextIndex);
+      }
+    }
   };
 
   const handleBackspace = (index: number) => {
@@ -56,12 +101,13 @@ export function EmailOtpModal({
     if (current[index]) {
       current[index] = "";
       onOtpChange(current.join(""));
+      focusInput(index);
       return;
     }
     const prevIndex = Math.max(index - 1, 0);
     current[prevIndex] = "";
     onOtpChange(current.join(""));
-    inputRefs.current[prevIndex]?.focus();
+    focusInput(prevIndex);
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
@@ -75,25 +121,40 @@ export function EmailOtpModal({
     onOtpChange(current.join(""));
     const nextIndex = Math.min(text.length, 6) - 1;
     if (nextIndex >= 0) {
-      inputRefs.current[nextIndex]?.focus();
+      focusInput(nextIndex);
     }
+  };
+
+  const getFirstEmptyIndex = () => {
+    for (let i = 0; i < 6; i += 1) {
+      if (!otpChars[i]) return i;
+    }
+    return 5;
   };
 
   const handleKeyDown = (
     event: KeyboardEvent<HTMLInputElement>,
     index: number
   ) => {
+    if (highlightFilled) {
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        handleHighlightInput();
+        return;
+      }
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        handleHighlightInput(event.key);
+        return;
+      }
+    }
     if (event.key === "Backspace") {
       event.preventDefault();
       handleBackspace(index);
     }
-    if (event.key === "ArrowLeft") {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
-      inputRefs.current[Math.max(index - 1, 0)]?.focus();
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      inputRefs.current[Math.min(index + 1, 5)]?.focus();
+      focusInput(getFirstEmptyIndex());
     }
   };
 
@@ -129,6 +190,13 @@ export function EmailOtpModal({
         </div>
 
         <div className="mt-8 space-y-4">
+          {error ? (
+            <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-rose-400 text-[11px] font-semibold text-rose-500">!
+              </span>
+              <span>{error}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-2">
             {Array.from({ length: 6 }).map((_, index) => (
               <input
@@ -143,12 +211,58 @@ export function EmailOtpModal({
                 autoComplete="one-time-code"
                 aria-label={`Digit ${index + 1}`}
                 value={otpChars[index] ?? ""}
+                readOnly={index !== getFirstEmptyIndex()}
                 onChange={(event) => setOtpAt(index, event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
+                onFocus={(event) => {
+                  const firstEmpty = getFirstEmptyIndex();
+                  if (highlightFilled) {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                    return;
+                  }
+                  if (index !== firstEmpty && index !== lastFocusedIndex) {
+                    event.preventDefault();
+                    focusInput(firstEmpty);
+                    return;
+                  }
+                  setLastFocusedIndex(index);
+                  event.currentTarget.select();
+                }}
+                onMouseDown={(event) => {
+                  const firstEmpty = getFirstEmptyIndex();
+                  if (highlightFilled) {
+                    event.preventDefault();
+                    setHighlightFilled(false);
+                    focusInput(lastFocusedIndex);
+                    return;
+                  }
+                  if (index !== firstEmpty && index !== lastFocusedIndex) {
+                    event.preventDefault();
+                    focusInput(firstEmpty);
+                  }
+                }}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  if (index !== lastFocusedIndex) {
+                    inputRefs.current[lastFocusedIndex]?.blur();
+                    setHighlightFilled(true);
+                    return;
+                  }
+                  setHighlightFilled(true);
+                  event.currentTarget.blur();
+                }}
                 onKeyDown={(event) => handleKeyDown(event, index)}
                 onPaste={handlePaste}
-                className={`h-12 w-12 rounded-xl border bg-white text-center text-lg font-semibold text-slate-900 outline-none transition focus:border-slate-700 ${
-                  otpChars[index] ? "border-slate-700" : "border-slate-300"
+                className={`h-12 w-12 rounded-xl border text-center text-lg font-semibold text-slate-900 outline-none transition focus:border-2 focus:border-slate-700 ${
+                  otpChars[index] ? "bg-slate-100" : "bg-white"
+                } ${
+                  error
+                    ? "border-rose-300 focus:border-rose-500"
+                    : "border-slate-300"
+                } ${
+                  !error && highlightFilled && otpChars[index]
+                    ? "border-2 border-slate-700"
+                    : ""
                 }`}
               />
             ))}

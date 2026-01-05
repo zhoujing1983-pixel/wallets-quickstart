@@ -159,7 +159,7 @@ export const verifyEmailOtp = async (
   email: string,
   code: string
 ) => {
-  const client = await getRedisClient();
+  const client = await getRedisClient(OTP_REDIS_DB);
   if (!client) {
     const entry = otpStore.get(emailId);
     if (!entry) {
