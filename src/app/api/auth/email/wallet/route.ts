@@ -53,9 +53,10 @@ export async function GET(req: NextRequest) {
     };
     const walletResponse = await createWallet(walletRequestBody);
     if (!walletResponse.ok) {
+      const responseData = walletResponse.data as { error?: string };
       return NextResponse.json(
         {
-          error: walletResponse.data?.error || "Failed to create wallet",
+          error: responseData?.error || "Failed to create wallet",
           details: walletResponse.data,
         },
         { status: walletResponse.status }

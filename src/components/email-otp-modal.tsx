@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent, KeyboardEvent } from "react";
+import type { ClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 type EmailOtpModalProps = {
   open: boolean;
@@ -133,7 +133,7 @@ export function EmailOtpModal({
   };
 
   const handleKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
+    event: ReactKeyboardEvent<HTMLInputElement>,
     index: number
   ) => {
     if (highlightFilled) {
