@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "concurrently -k -n web,worker -c blue,magenta \"next dev --turbopack\" \"npm run email:worker\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -11,7 +11,8 @@
     "agent:start": "tsx scripts/voltagent.ts",
     "agent:openai": "tsx scripts/voltagentopenai.ts",
     "agent:openai:local": "tsx scripts/voltagentopenai.ts --local",
-    "treasure:wallet": "tsx scripts/treasureWallet.ts"
+    "treasure:wallet": "tsx scripts/treasureWallet.ts",
+    "email:worker": "tsx scripts/email-worker.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.51",
@@ -21,14 +22,19 @@
     "@voltagent/core": "^1.5.2",
     "@voltagent/server-hono": "^1.2.11",
     "ai": "^5.0.116",
+    "bullmq": "^5.66.4",
     "clsx": "^2.1.1",
-    "nodemailer": "^6.10.1",
+    "concurrently": "^9.2.1",
+    "dotenv": "^17.2.3",
+    "ioredis": "^5.8.2",
     "next": "^16.1.0",
+    "nodemailer": "^6.10.1",
     "ollama-ai-provider-v2": "^1.5.5",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-transition-group": "^4.4.5",
+    "redis": "^5.10.0",
     "tailwind-merge": "^3.0.2",
     "tw-animate-css": "^1.2.4",
     "zod": "^4.2.1"

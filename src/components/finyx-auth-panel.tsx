@@ -92,19 +92,33 @@ export function FinyxAuthPanel() {
     setIsSubmitting(true);
     try {
       const normalizedEmail = email.trim().toLowerCase();
-      if (emailOtp?.email === normalizedEmail && emailOtp.expiresAt > Date.now()) {
-        setStep("otp");
-        setResendSeconds(getResendSeconds(resendAvailableAt));
-        setSuccess("We already sent a code. Please check your inbox.");
-        return;
-      }
       const response = await fetch("/api/auth/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: normalizedEmail }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (
+          data?.error === "resend_not_available" &&
+          typeof data?.resendAvailableAt === "number"
+        ) {
+          if (
+            typeof data?.emailId === "string" &&
+            typeof data?.expiresAt === "number"
+          ) {
+            setEmailOtp({
+              email: normalizedEmail,
+              emailId: data.emailId,
+              expiresAt: data.expiresAt,
+            });
+          }
+          setStep("otp");
+          setResendAvailableAt(data.resendAvailableAt);
+          setResendSeconds(getResendSeconds(data.resendAvailableAt));
+          setSuccess("We already sent a code. Please check your inbox.");
+          return;
+        }
         throw new Error(data?.error ?? "Failed to send email.");
       }
       setEmailOtp({
@@ -113,7 +127,10 @@ export function FinyxAuthPanel() {
         expiresAt: data.expiresAt,
       });
       setStep("otp");
-      const availableAt = Date.now() + 60_000;
+      const availableAt =
+        typeof data?.resendAvailableAt === "number"
+          ? data.resendAvailableAt
+          : Date.now() + 60_000;
       setResendAvailableAt(availableAt);
       setResendSeconds(getResendSeconds(availableAt));
     } catch (err) {
@@ -177,8 +194,27 @@ export function FinyxAuthPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailOtp.email }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (
+          data?.error === "resend_not_available" &&
+          typeof data?.resendAvailableAt === "number"
+        ) {
+          if (
+            typeof data?.emailId === "string" &&
+            typeof data?.expiresAt === "number"
+          ) {
+            setEmailOtp({
+              email: emailOtp.email,
+              emailId: data.emailId,
+              expiresAt: data.expiresAt,
+            });
+          }
+          setResendAvailableAt(data.resendAvailableAt);
+          setResendSeconds(getResendSeconds(data.resendAvailableAt));
+          setSuccess("We already sent a code. Please check your inbox.");
+          return;
+        }
         throw new Error(data?.error ?? "Failed to resend code.");
       }
       setEmailOtp({
@@ -186,7 +222,10 @@ export function FinyxAuthPanel() {
         emailId: data.emailId,
         expiresAt: data.expiresAt,
       });
-      const availableAt = Date.now() + 60_000;
+      const availableAt =
+        typeof data?.resendAvailableAt === "number"
+          ? data.resendAvailableAt
+          : Date.now() + 60_000;
       setResendAvailableAt(availableAt);
       setResendSeconds(getResendSeconds(availableAt));
     } catch (err) {

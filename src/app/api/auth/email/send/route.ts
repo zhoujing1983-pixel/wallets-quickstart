@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { isEmailValid } from "@crossmint/common-sdk-auth";
-import { buildOtpEmail, createEmailOtp } from "@/lib/email-otp";
+import {
+  buildOtpEmail,
+  createEmailOtp,
+  getLatestEmailOtp,
+  getResendAvailableAt,
+} from "@/lib/email-otp";
+import { getEmailQueue } from "@/lib/email-queue";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -38,29 +44,73 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const resendAvailableAt = await getResendAvailableAt(email);
+  if (resendAvailableAt && resendAvailableAt > Date.now()) {
+    const latest = await getLatestEmailOtp(email);
+    return NextResponse.json(
+      {
+        error: "resend_not_available",
+        resendAvailableAt,
+        emailId: latest?.emailId ?? null,
+        expiresAt: latest?.expiresAt ?? null,
+      },
+      { status: 429 }
+    );
+  }
+
   const code = crypto.randomInt(100000, 1000000).toString();
-  const { emailId, expiresAt } = createEmailOtp(email, code);
+  const {
+    emailId,
+    expiresAt,
+    resendAvailableAt: nextResendAvailableAt,
+  } = await createEmailOtp(email, code);
   const message = buildOtpEmail(code);
 
-  try {
-    await transporter.sendMail({
-      from: mailFrom,
-      to: email,
-      bcc: contactTo && contactTo !== email ? contactTo : undefined,
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-    });
-  } catch (err) {
-    console.error("SMTP send failed", err);
-    return NextResponse.json(
-      { error: "email_send_failed" },
-      { status: 500 }
-    );
+  const queue = getEmailQueue();
+  if (queue) {
+    try {
+      await queue.add(
+        "send-otp",
+        {
+          from: mailFrom,
+          to: email,
+          bcc: contactTo && contactTo !== email ? contactTo : undefined,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        },
+        {
+          removeOnComplete: true,
+          removeOnFail: 100,
+        }
+      );
+    } catch (err: unknown) {
+      console.error("Email queue enqueue failed", err);
+    } finally {
+      await queue.close();
+    }
+  } else {
+    try {
+      void transporter
+        .sendMail({
+          from: mailFrom,
+          to: email,
+          bcc: contactTo && contactTo !== email ? contactTo : undefined,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        })
+        .catch((err: unknown) => {
+          console.error("SMTP send failed", err);
+        });
+    } catch (err: unknown) {
+      console.error("SMTP send failed", err);
+    }
   }
 
   return NextResponse.json({
     emailId,
     expiresAt,
+    resendAvailableAt: nextResendAvailableAt,
   });
 }

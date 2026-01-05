@@ -7,7 +7,7 @@ export function FinyxLandingPage({ isLoading }: { isLoading: boolean }) {
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-5">
       <div
         className="relative hidden lg:block col-span-2 bg-center bg-cover"
-        style={{ backgroundImage: "url('/web3-wallet.jpg')" }}
+        style={{ backgroundImage: "url('/wallet-card-hand.jpg')" }}
         aria-hidden="true"
       />
 

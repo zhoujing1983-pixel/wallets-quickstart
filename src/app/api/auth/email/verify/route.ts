@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
 
-  const result = verifyEmailOtp(emailId, email, code);
+  const result = await verifyEmailOtp(emailId, email, code);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 401 });
   }
