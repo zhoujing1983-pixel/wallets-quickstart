@@ -31,25 +31,19 @@ export async function GET(req: NextRequest) {
     const userLocator = `email:${email}`;
     const chain = process.env.NEXT_PUBLIC_CHAIN ?? "solana";
     const chainType = getChainType(chain);
-    const adminSignerAddress =
-      process.env.CROSSMINT_ADMIN_SIGNER_ADDRESS ?? "";
-    if (!adminSignerAddress) {
-      return NextResponse.json(
-        { error: "CROSSMINT_ADMIN_SIGNER_ADDRESS missing" },
-        { status: 500 }
-      );
-    }
+    const walletAliasBase = process.env.CROSSMINT_WALLET_ALIAS ?? "server";
+    const walletEnv = process.env.CROSSMINT_ENV ?? "staging";
+    const walletAlias = `${walletAliasBase}-${walletEnv}`;
     const walletRequestBody = {
       chainType,
       type: "smart",
       config: {
         adminSigner: {
-          type: "email",
-          address: adminSignerAddress,
-          email,
+          type: "api-key",
         },
       },
       owner: userLocator,
+      alias: walletAlias,
     };
     const walletResponse = await createWallet(walletRequestBody);
     if (!walletResponse.ok) {

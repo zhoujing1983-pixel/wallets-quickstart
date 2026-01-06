@@ -1,121 +1,110 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { EmailSignersDialog, useCrossmintAuth } from "@crossmint/client-sdk-react-ui";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import {
-  getSignerStatus,
-  sendEmailOtp,
-  signSolanaTransaction,
-  verifyEmailOtp,
-} from "@/lib/crossmint-email-signer";
 
 type EmailTransferFundsProps = {
   walletAddress: string;
-  email?: string;
   onTransferSuccess?: () => void;
 };
 
 export function EmailTransferFunds({
   walletAddress,
-  email,
   onTransferSuccess,
 }: EmailTransferFundsProps) {
-  const [recipient, setRecipient] = useState<string>("");
+  const [recipient, setRecipient] = useState<string | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [amountInput, setAmountInput] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [explorerLink, setExplorerLink] = useState<string | null>(null);
-  const [isOtpOpen, setIsOtpOpen] = useState(false);
-  const [otpStep, setOtpStep] = useState<"initial" | "otp">("initial");
+  const [pendingTransactionId, setPendingTransactionId] = useState<
+    string | null
+  >(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const { jwt } = useCrossmintAuth();
-  const pendingApprovalRef = useRef<{
-    transactionId: string;
-    transactionToSign: string;
-    signer: string;
-  } | null>(null);
-  const rejectRef = useRef<((error: Error) => void) | undefined>(undefined);
+  const chain = (process.env.NEXT_PUBLIC_CHAIN ?? "solana").toLowerCase();
+  const crossmintEnv = process.env.NEXT_PUBLIC_CROSSMINT_ENV ?? "staging";
 
   const canSubmit =
     Boolean(walletAddress) && Boolean(recipient) && amount != null;
-  const clientApiKey =
-    process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_API_KEY ??
-    process.env.NEXT_PUBLIC_FINYX_API_KEY ??
-    "";
-  const signerEnv = process.env.NEXT_PUBLIC_CROSSMINT_ENV ?? "staging";
 
-  const signAndApprove = useCallback(async () => {
-    const pendingApproval = pendingApprovalRef.current;
-    if (!pendingApproval) {
-      setError("Transfer approval payload is missing.");
+  const buildExplorerUrl = (txId: string) => {
+    if (!chain.includes("solana")) {
+      return null;
+    }
+    const cluster = crossmintEnv === "production" ? "" : "?cluster=devnet";
+    return `https://explorer.solana.com/tx/${txId}${cluster}`;
+  };
+
+  useEffect(() => {
+    if (!pendingTransactionId) {
       return;
     }
-    setIsLoading(true);
-    setStatusMessage("Signing transaction...");
-    try {
-    const signature = await signSolanaTransaction({
-      apiKey: clientApiKey,
-      jwt: jwt ?? "",
-      environment: signerEnv,
-      transaction: pendingApproval.transactionToSign,
-    });
-      const approvalRes = await fetch("/api/auth/email/transfer/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletLocator: walletAddress,
-          transactionId: pendingApproval.transactionId,
-          signer: pendingApproval.signer,
-          signature,
-        }),
-      });
-      const approvalData = await approvalRes.json();
-      if (!approvalRes.ok) {
-        const message =
-          approvalData?.details?.message ||
-          approvalData?.details?.error ||
-          approvalData?.error ||
-          "Failed to approve transfer";
-        setError(message);
-        return;
+    let canceled = false;
+    let attempts = 0;
+    const maxAttempts = 15;
+
+    const poll = async () => {
+      if (canceled) return;
+      attempts += 1;
+      try {
+        const res = await fetch(
+          `/api/auth/email/transfer/status?walletLocator=${encodeURIComponent(
+            walletAddress
+          )}&transactionId=${encodeURIComponent(pendingTransactionId)}`
+        );
+        const data = await res.json();
+        if (res.ok) {
+          const transaction = data?.transaction ?? data;
+          const txId =
+            transaction?.onChain?.txId ??
+            transaction?.txId ??
+            data?.txId ??
+            null;
+          const explorer =
+            transaction?.onChain?.explorerLink ??
+            data?.onChain?.explorerLink ??
+            (txId ? buildExplorerUrl(txId) : null);
+          if (explorer) {
+            setExplorerLink(explorer);
+            setStatusMessage(null);
+            setPendingTransactionId(null);
+            return;
+          }
+          if (transaction?.status === "failed") {
+            setError("Transfer failed.");
+            setStatusMessage(null);
+            setPendingTransactionId(null);
+            return;
+          }
+        }
+      } catch (pollError) {
+        // Ignore transient polling errors.
       }
-      const approvedTransaction = approvalData?.transaction ?? approvalData;
-      const explorer =
-        approvedTransaction?.onChain?.explorerLink ??
-        approvedTransaction?.hash ??
-        null;
-      if (explorer) {
-        setExplorerLink(explorer);
+      if (attempts >= maxAttempts) {
+        setStatusMessage(null);
+        setPendingTransactionId(null);
       }
-      onTransferSuccess?.();
-    } finally {
-      setIsLoading(false);
-      setStatusMessage(null);
-    }
-  }, [clientApiKey, onTransferSuccess, signerEnv, walletAddress]);
+    };
+
+    poll();
+    const interval = window.setInterval(poll, 2000);
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
+  }, [pendingTransactionId, walletAddress, chain, crossmintEnv]);
 
   const handleTransfer = async () => {
     if (!canSubmit) {
       alert("Transfer: missing required fields");
       return;
     }
-    if (!email) {
-      setError("Email is required for OTP approval.");
-      return;
-    }
-    if (!clientApiKey) {
-      setError("Missing client API key.");
-      return;
-    }
-    if (!jwt) {
-      setError("Crossmint auth is required to approve this transfer.");
-      return;
-    }
     setIsLoading(true);
     setError(null);
     setExplorerLink(null);
+    setPendingTransactionId(null);
+    setStatusMessage(null);
     try {
       const res = await fetch("/api/auth/email/transfer", {
         method: "POST",
@@ -138,50 +127,28 @@ export function EmailTransferFunds({
       }
       const transaction = data?.transaction ?? data;
       const transactionId = transaction?.id ?? data?.id ?? null;
-      const approvalSigner =
-        transaction?.approvals?.pending?.[0]?.signer?.locator ??
-        data?.approvals?.pending?.[0]?.signer?.locator ??
-        `email:${email}`;
-      const transactionToSign =
-        transaction?.onChain?.transaction ??
-        data?.onChain?.transaction ??
-        transaction?.params?.transaction ??
-        data?.params?.transaction ??
+      const txId =
+        transaction?.onChain?.txId ??
+        transaction?.txId ??
+        data?.onChain?.txId ??
+        data?.txId ??
         null;
-      if (!transactionId || !transactionToSign) {
-        setError("Transfer approval payload is missing.");
-        return;
+      let explorer =
+        transaction?.onChain?.explorerLink ?? data?.onChain?.explorerLink ?? null;
+      if (!explorer && txId) {
+        explorer = buildExplorerUrl(txId);
       }
-      pendingApprovalRef.current = {
-        transactionId,
-        transactionToSign,
-        signer: approvalSigner,
-      };
-
-      let signerStatus: "ready" | "new-device" = "new-device";
-      try {
-        signerStatus = await getSignerStatus({
-          apiKey: clientApiKey,
-          jwt,
-          environment: signerEnv,
-        });
-      } catch (statusError) {
-        signerStatus = "new-device";
+      if (explorer) {
+        setExplorerLink(explorer);
+      } else if (transactionId) {
+        setStatusMessage("Waiting for confirmation...");
+        setPendingTransactionId(transactionId);
       }
-      if (signerStatus === "ready") {
-        await signAndApprove();
-        return;
-      }
-
-      setStatusMessage("Waiting for OTP...");
-      setOtpStep("initial");
-      setIsOtpOpen(true);
+      onTransferSuccess?.();
     } catch (err) {
       setError("Failed to transfer funds.");
     } finally {
-      if (!isOtpOpen) {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   };
 
@@ -213,7 +180,7 @@ export function EmailTransferFunds({
                 return;
               }
               const numValue = parseFloat(value);
-              if (!Number.isNaN(numValue)) {
+              if (!isNaN(numValue)) {
                 setAmount(numValue);
               }
             }}
@@ -225,10 +192,10 @@ export function EmailTransferFunds({
           <label className="text-sm font-medium text-slate-300">Transfer to</label>
           <input
             type="text"
-            value={recipient}
+            value={recipient || ""}
             className="w-full px-3 py-2 border border-white/20 rounded-2xl bg-white/5 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#ffac44] focus:border-transparent transition"
             placeholder="Enter wallet address"
-            onChange={(e) => setRecipient(e.target.value)}
+            onChange={(e) => setRecipient(e.target.value || null)}
           />
         </div>
 
@@ -237,12 +204,12 @@ export function EmailTransferFunds({
         <button
           className={cn(
             "w-full py-3 px-4 rounded-full text-sm font-semibold transition-all duration-200",
-            isLoading || !canSubmit
+            isLoading || !recipient || !amount
               ? "bg-white/30 text-white/60 cursor-not-allowed"
               : "bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] hover:opacity-90"
           )}
           onClick={handleTransfer}
-          disabled={isLoading || !canSubmit}
+          disabled={isLoading || !recipient || !amount}
         >
           {isLoading ? "Transferring..." : "Transfer"}
         </button>
@@ -262,66 +229,6 @@ export function EmailTransferFunds({
           </a>
         ) : null}
       </div>
-      <EmailSignersDialog
-        email={email}
-        open={isOtpOpen}
-        setOpen={(open) => {
-          setIsOtpOpen(open);
-          if (!open) {
-            rejectRef.current?.(new Error("OTP dialog closed"));
-            setIsLoading(false);
-            setStatusMessage(null);
-          }
-        }}
-        step={otpStep}
-        onSubmitEmail={async () => {
-          try {
-            const status = await sendEmailOtp({
-              apiKey: clientApiKey,
-              jwt,
-              email,
-              environment: signerEnv,
-            });
-            if (status === "ready") {
-              setIsOtpOpen(false);
-              await signAndApprove();
-              return;
-            }
-            setStatusMessage("Waiting for OTP...");
-            setOtpStep("otp");
-          } catch (otpError) {
-            setError("Failed to send OTP.");
-          }
-        }}
-        onResendOTPCode={async () => {
-          try {
-            await sendEmailOtp({
-              apiKey: clientApiKey,
-              jwt,
-              email,
-              environment: signerEnv,
-            });
-          } catch (otpError) {
-            setError("Failed to resend OTP.");
-          }
-        }}
-        onSubmitOTP={async (token) => {
-          try {
-            await verifyEmailOtp({
-              apiKey: clientApiKey,
-              jwt,
-              otp: token,
-              environment: signerEnv,
-            });
-            setIsOtpOpen(false);
-            setStatusMessage("Signing transaction...");
-            await signAndApprove();
-          } catch (otpError) {
-            setError("Failed to verify OTP.");
-          }
-        }}
-        rejectRef={rejectRef}
-      />
     </div>
   );
 }

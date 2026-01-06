@@ -412,7 +412,6 @@ export function EmailDashboard({
             <div className="lg:col-span-1 flex h-full flex-col">
               <EmailTransferFunds
                 walletAddress={walletAddress}
-                email={emailAddress}
                 onTransferSuccess={() => {
                   fetchActivity();
                   fetchBalance();

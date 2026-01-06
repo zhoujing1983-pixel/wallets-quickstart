@@ -177,6 +177,27 @@ export const sendWalletToken = async (params: {
   });
 
 /**
+ * Fetch a wallet transaction by id.
+ *
+ * Params:
+ * - walletLocator: Wallet locator string (often the wallet address).
+ * - transactionId: Transaction id returned by Crossmint.
+ *
+ * Returns:
+ * - ok: HTTP success flag.
+ * - status: HTTP status code.
+ * - data: Crossmint transaction response body.
+ */
+export const getWalletTransaction = async (params: {
+  walletLocator: string;
+  transactionId: string;
+}) =>
+  request({
+    method: "GET",
+    path: `/api/2025-06-09/wallets/${params.walletLocator}/transactions/${params.transactionId}`,
+  });
+
+/**
  * Submit approvals for a wallet transaction.
  *
  * Params:
