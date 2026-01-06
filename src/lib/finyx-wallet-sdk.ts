@@ -144,3 +144,60 @@ export const getWalletTransfers = async (params: {
       status: params.status,
     },
   });
+
+/**
+ * Send tokens from a wallet to a recipient.
+ *
+ * Params:
+ * - walletLocator: Wallet locator string (often the wallet address).
+ * - tokenLocator: Token locator string (e.g. "solana:..." or "solana:USDC mint").
+ * - recipient: Recipient locator (address, email, etc).
+ * - amount: Decimal amount as a string.
+ *
+ * Returns:
+ * - ok: HTTP success flag.
+ * - status: HTTP status code.
+ * - data: Crossmint transfer response body.
+ */
+export const sendWalletToken = async (params: {
+  walletLocator: string;
+  tokenLocator: string;
+  recipient: string;
+  amount: string;
+  signer?: string;
+}) =>
+  request({
+    method: "POST",
+    path: `/api/2025-06-09/wallets/${params.walletLocator}/tokens/${params.tokenLocator}/transfers`,
+    body: {
+      recipient: params.recipient,
+      amount: params.amount,
+      signer: params.signer,
+    },
+  });
+
+/**
+ * Submit approvals for a wallet transaction.
+ *
+ * Params:
+ * - walletLocator: Wallet locator string (often the wallet address).
+ * - transactionId: Transaction id returned by Crossmint.
+ * - approvals: Array of approval payloads (signer + signature).
+ *
+ * Returns:
+ * - ok: HTTP success flag.
+ * - status: HTTP status code.
+ * - data: Crossmint transaction response body.
+ */
+export const submitTransactionApprovals = async (params: {
+  walletLocator: string;
+  transactionId: string;
+  approvals: Array<{ signer: string; signature: string }>;
+}) =>
+  request({
+    method: "POST",
+    path: `/api/2025-06-09/wallets/${params.walletLocator}/transactions/${params.transactionId}/approvals`,
+    body: {
+      approvals: params.approvals,
+    },
+  });

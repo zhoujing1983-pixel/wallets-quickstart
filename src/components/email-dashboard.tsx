@@ -6,6 +6,7 @@ import Link from "next/link";
 import { LogoutButton } from "./logout";
 import { Footer } from "./footer";
 import { OnrampCheckout } from "@/components/onramp-checkout";
+import { EmailTransferFunds } from "@/components/email-transfer";
 
 type EmailWallet = {
   address?: string;
@@ -409,16 +410,17 @@ export function EmailDashboard({
               </div>
             </div>
             <div className="lg:col-span-1 flex h-full flex-col">
-              <div className="bg-[#27395d] border border-white/15 rounded-3xl p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] text-slate-100 h-full">
-                <div className="flex flex-col gap-3">
-                  <h3 className="text-lg font-semibold text-white">
-                    Transfer funds
-                  </h3>
-                  <p className="text-sm text-slate-300">
-                    Transfers are available after Crossmint login.
-                  </p>
-                </div>
-              </div>
+              <EmailTransferFunds
+                walletAddress={walletAddress}
+                email={emailAddress}
+                onTransferSuccess={() => {
+                  fetchActivity();
+                  fetchBalance();
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(new Event("wallet:refresh-balance"));
+                  }
+                }}
+              />
             </div>
             <div className="lg:col-span-1 flex h-full flex-col">
               <div className="bg-[#27395d] border border-white/15 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.35)] p-6 text-slate-100 h-full">
