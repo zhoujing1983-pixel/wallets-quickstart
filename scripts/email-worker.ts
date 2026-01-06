@@ -2,7 +2,11 @@ import "dotenv/config";
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import nodemailer from "nodemailer";
-import { EMAIL_QUEUE_NAME, type EmailJobData } from "../src/lib/email-queue";
+import {
+  EMAIL_QUEUE_NAME,
+  EMAIL_QUEUE_PREFIX,
+  type EmailJobData,
+} from "../src/lib/email-queue";
 import { getRedisDb, withRedisDb } from "../src/lib/redis-url";
 
 const smtpHost = process.env.SMTP_HOST ?? "";
@@ -53,6 +57,7 @@ const worker = new Worker<EmailJobData>(
   },
   {
     connection,
+    prefix: EMAIL_QUEUE_PREFIX,
   }
 );
 

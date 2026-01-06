@@ -5,6 +5,7 @@ const CROSSMINT_SERVER_SIDE_API_KEY = process.env
   .CROSSMINT_SERVER_SIDE_API_KEY as string;
 const CROSSMINT_ENV = process.env.CROSSMINT_ENV || "staging";
 const EMAIL_COOKIE = "finyx_email";
+const TRANSFER_OTP_COOKIE = "finyx_transfer_otp";
 const USDC_STAGING =
   "solana:4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 const USDC_PROD = "solana:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -23,6 +24,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
     }
 
+    const transferOtp = req.cookies.get(TRANSFER_OTP_COOKIE)?.value ?? "";
+    if (!transferOtp) {
+      return NextResponse.json({ error: "otp_required" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { walletLocator, recipient, amount } = body ?? {};
     if (!walletLocator || !recipient || !amount) {
@@ -32,7 +38,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const tokenLocator = CROSSMINT_ENV === "production" ? USDC_PROD : USDC_STAGING;
+    const tokenLocator =
+      CROSSMINT_ENV === "production" ? USDC_PROD : USDC_STAGING;
     const response = await sendWalletToken({
       walletLocator,
       tokenLocator,

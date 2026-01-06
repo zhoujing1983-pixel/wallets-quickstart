@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@crossmint/client-sdk-react-ui";
 import Image from "next/image";
 
+const OTP_SESSION_KEY = "finyx_transfer_otp_session";
+
 type LogoutButtonProps = {
   hasEmailSession?: boolean;
   onEmailLogout?: () => void;
@@ -22,6 +24,9 @@ export function LogoutButton({
     }
     const runLogout = async () => {
       try {
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem(OTP_SESSION_KEY);
+        }
         if (hasEmailSession) {
           await fetch("/api/auth/email/session", { method: "DELETE" });
           onEmailLogout?.();

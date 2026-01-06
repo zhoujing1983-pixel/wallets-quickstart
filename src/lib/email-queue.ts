@@ -3,6 +3,8 @@ import IORedis from "ioredis";
 import { getRedisDb, withRedisDb } from "@/lib/redis-url";
 
 export const EMAIL_QUEUE_NAME = "email";
+export const EMAIL_QUEUE_PREFIX =
+  process.env.EMAIL_QUEUE_PREFIX ?? "finyx-email";
 
 export type EmailJobData = {
   to: string;
@@ -29,5 +31,8 @@ export const getEmailQueue = () => {
   if (!isEmailQueueEnabled()) return null;
   const connection = getRedisConnection();
   if (!connection) return null;
-  return new Queue<EmailJobData>(EMAIL_QUEUE_NAME, { connection });
+  return new Queue<EmailJobData>(EMAIL_QUEUE_NAME, {
+    connection,
+    prefix: EMAIL_QUEUE_PREFIX,
+  });
 };

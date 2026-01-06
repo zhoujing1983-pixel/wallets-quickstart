@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { TransferOtpModal } from "@/components/transfer-otp-modal";
+
+const OTP_SESSION_KEY = "finyx_transfer_otp_session";
 
 type EmailTransferFundsProps = {
   walletAddress: string;
@@ -22,6 +25,19 @@ export function EmailTransferFunds({
     string | null
   >(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [otpStep, setOtpStep] = useState<"send" | "verify">("send");
+  const [otpOpen, setOtpOpen] = useState(false);
+  const [otpEmail, setOtpEmail] = useState<string | null>(null);
+  const [otpEmailId, setOtpEmailId] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpIsSubmitting, setOtpIsSubmitting] = useState(false);
+  const [otpResendAvailableAt, setOtpResendAvailableAt] = useState<
+    number | null
+  >(null);
+  const [otpResendSeconds, setOtpResendSeconds] = useState(0);
+  const [otpAuthorized, setOtpAuthorized] = useState(false);
+  const [otpPendingTransfer, setOtpPendingTransfer] = useState(false);
   const chain = (process.env.NEXT_PUBLIC_CHAIN ?? "solana").toLowerCase();
   const crossmintEnv = process.env.NEXT_PUBLIC_CROSSMINT_ENV ?? "staging";
 
@@ -35,6 +51,50 @@ export function EmailTransferFunds({
     const cluster = crossmintEnv === "production" ? "" : "?cluster=devnet";
     return `https://explorer.solana.com/tx/${txId}${cluster}`;
   };
+
+  const getResendSeconds = (availableAt: number | null) => {
+    if (!availableAt) return 0;
+    const remainingMs = availableAt - Date.now();
+    return Math.max(0, Math.ceil(remainingMs / 1000));
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = sessionStorage.getItem(OTP_SESSION_KEY);
+    setOtpAuthorized(stored === "true");
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadEmail = async () => {
+      try {
+        const res = await fetch("/api/auth/email/session");
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({}));
+        if (active && typeof data?.email === "string") {
+          setOtpEmail(data.email);
+        }
+      } catch (emailError) {
+        // Ignore email lookup errors.
+      }
+    };
+    loadEmail();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!otpResendAvailableAt) {
+      setOtpResendSeconds(0);
+      return;
+    }
+    setOtpResendSeconds(getResendSeconds(otpResendAvailableAt));
+    const interval = window.setInterval(() => {
+      setOtpResendSeconds(getResendSeconds(otpResendAvailableAt));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [otpResendAvailableAt]);
 
   useEffect(() => {
     if (!pendingTransactionId) {
@@ -95,7 +155,151 @@ export function EmailTransferFunds({
     };
   }, [pendingTransactionId, walletAddress, chain, crossmintEnv]);
 
-  const handleTransfer = async () => {
+  const openOtpModal = () => {
+    setOtpOpen(true);
+    setOtpStep("send");
+    setOtpError(null);
+    setOtpCode("");
+    setOtpEmailId(null);
+    setOtpResendAvailableAt(null);
+  };
+
+  const handleSendOtp = async () => {
+    setOtpIsSubmitting(true);
+    setOtpError(null);
+    try {
+      const response = await fetch("/api/auth/email/transfer/otp/send", {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (
+          data?.error === "resend_not_available" &&
+          typeof data?.resendAvailableAt === "number"
+        ) {
+          if (typeof data?.emailId === "string") {
+            setOtpEmailId(data.emailId);
+          }
+          setOtpStep("verify");
+          setOtpResendAvailableAt(data.resendAvailableAt);
+          setOtpError("We already sent a code. Please check your inbox.");
+          return;
+        }
+        throw new Error(data?.error ?? "Failed to send code");
+      }
+      if (typeof data?.emailId === "string") {
+        setOtpEmailId(data.emailId);
+      }
+      setOtpStep("verify");
+      const availableAt =
+        typeof data?.resendAvailableAt === "number"
+          ? data.resendAvailableAt
+          : Date.now() + 60_000;
+      setOtpResendAvailableAt(availableAt);
+    } catch (err) {
+      setOtpError("Failed to send code. Please try again.");
+    } finally {
+      setOtpIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpEmailId) {
+      setOtpError("Please request a verification code first.");
+      return;
+    }
+    if (otpCode.trim().length < 10) {
+      setOtpError("Enter the 10-digit code.");
+      return;
+    }
+    setOtpIsSubmitting(true);
+    setOtpError(null);
+    try {
+      const response = await fetch("/api/auth/email/transfer/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emailId: otpEmailId,
+          code: otpCode.trim(),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const errorCode = typeof data?.error === "string" ? data.error : "";
+        const errorMessage =
+          errorCode === "code_not_found"
+            ? "Code not found or expired. Please request a new code."
+            : errorCode === "code_expired"
+              ? "Code expired. Please request a new code."
+              : errorCode === "invalid_code"
+                ? "Invalid code. Please try again."
+                : errorCode === "too_many_attempts"
+                  ? "Too many attempts. Please request a new code."
+                  : errorCode === "email_mismatch"
+                    ? "Email mismatch. Please request a new code."
+                    : errorCode === "invalid_code_format"
+                      ? "Enter the 10-digit code."
+                      : "Invalid code. Please try again.";
+        setOtpError(errorMessage);
+        return;
+      }
+      setOtpAuthorized(true);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(OTP_SESSION_KEY, "true");
+      }
+      setOtpOpen(false);
+      setOtpStep("send");
+      setOtpCode("");
+      if (otpPendingTransfer) {
+        setOtpPendingTransfer(false);
+        await performTransfer();
+      }
+    } catch (err) {
+      setOtpError("Verification failed. Please try again.");
+    } finally {
+      setOtpIsSubmitting(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (otpIsSubmitting) return;
+    setOtpIsSubmitting(true);
+    setOtpError(null);
+    try {
+      const response = await fetch("/api/auth/email/transfer/otp/send", {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (
+          data?.error === "resend_not_available" &&
+          typeof data?.resendAvailableAt === "number"
+        ) {
+          if (typeof data?.emailId === "string") {
+            setOtpEmailId(data.emailId);
+          }
+          setOtpResendAvailableAt(data.resendAvailableAt);
+          setOtpError("Please wait before requesting another code.");
+          return;
+        }
+        throw new Error(data?.error ?? "Failed to resend code");
+      }
+      if (typeof data?.emailId === "string") {
+        setOtpEmailId(data.emailId);
+      }
+      const availableAt =
+        typeof data?.resendAvailableAt === "number"
+          ? data.resendAvailableAt
+          : Date.now() + 60_000;
+      setOtpResendAvailableAt(availableAt);
+    } catch (err) {
+      setOtpError("Failed to resend code. Please try again.");
+    } finally {
+      setOtpIsSubmitting(false);
+    }
+  };
+
+  const performTransfer = async () => {
     if (!canSubmit) {
       alert("Transfer: missing required fields");
       return;
@@ -117,6 +321,15 @@ export function EmailTransferFunds({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (data?.error === "otp_required") {
+          setOtpAuthorized(false);
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem(OTP_SESSION_KEY);
+          }
+          setOtpPendingTransfer(true);
+          openOtpModal();
+          return;
+        }
         const message =
           data?.details?.message ||
           data?.details?.error ||
@@ -150,6 +363,19 @@ export function EmailTransferFunds({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleTransfer = async () => {
+    if (!canSubmit) {
+      alert("Transfer: missing required fields");
+      return;
+    }
+    if (!otpAuthorized) {
+      setOtpPendingTransfer(true);
+      openOtpModal();
+      return;
+    }
+    await performTransfer();
   };
 
   return (
@@ -229,6 +455,27 @@ export function EmailTransferFunds({
           </a>
         ) : null}
       </div>
+
+      <TransferOtpModal
+        open={otpOpen}
+        step={otpStep}
+        email={otpEmail}
+        code={otpCode}
+        resendSeconds={otpResendSeconds}
+        isSubmitting={otpIsSubmitting}
+        error={otpError}
+        onClose={() => {
+          setOtpOpen(false);
+          setOtpPendingTransfer(false);
+          setOtpError(null);
+          setOtpStep("send");
+          setOtpCode("");
+        }}
+        onSendCode={handleSendOtp}
+        onCodeChange={setOtpCode}
+        onVerify={handleVerifyOtp}
+        onResend={handleResendOtp}
+      />
     </div>
   );
 }

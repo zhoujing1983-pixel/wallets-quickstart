@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const EMAIL_COOKIE = "finyx_email";
+const TRANSFER_OTP_COOKIE = "finyx_transfer_otp";
 
 export async function GET(req: NextRequest) {
   const email = req.cookies.get(EMAIL_COOKIE)?.value ?? "";
@@ -13,6 +14,11 @@ export async function GET(req: NextRequest) {
 export async function DELETE() {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(EMAIL_COOKIE, "", {
+    httpOnly: true,
+    maxAge: 0,
+    path: "/",
+  });
+  res.cookies.set(TRANSFER_OTP_COOKIE, "", {
     httpOnly: true,
     maxAge: 0,
     path: "/",
