@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { LogoutButton } from "./logout";
 import { Footer } from "./footer";
+import { OnrampCheckout } from "@/components/onramp-checkout";
 
 type EmailWallet = {
   address?: string;
@@ -35,9 +36,16 @@ export function EmailDashboard({
   const [balance, setBalance] = useState<string | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [isOnrampOpen, setIsOnrampOpen] = useState(false);
   const [activity, setActivity] = useState<Array<Record<string, any>>>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(false);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const lastBalanceRef = useRef<string | null>(null);
+  const lastActivityHashRef = useRef<string>("");
+  const hasLoadedBalanceRef = useRef(false);
+  const hasLoadedActivityRef = useRef(false);
+  const balanceErrorRef = useRef<string | null>(null);
+  const activityErrorRef = useRef<string | null>(null);
   const formatWalletAddress = (address: string) => {
     if (!address) return "Unknown";
     if (address.length <= 12) return address;
@@ -61,6 +69,12 @@ export function EmailDashboard({
     const months = Math.floor(days / 30);
     if (months < 12) return `${months}mo ago`;
     return "Earlier";
+  };
+  const formatTimestamp = (value?: string) => {
+    if (!value) return "Unknown time";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown time";
+    return date.toLocaleString();
   };
 
   const walletAddress = emailWallet?.address ?? "";
@@ -92,81 +106,171 @@ export function EmailDashboard({
     }
   };
 
-  useEffect(() => {
+  const fetchBalance = useCallback(async () => {
     if (!walletAddress) return;
-    const fetchBalance = async () => {
+    const shouldShowLoading = !hasLoadedBalanceRef.current;
+    if (shouldShowLoading) {
       setIsLoadingBalance(true);
-      setBalanceError(null);
-      try {
-        const res = await fetch(
-          `/api/auth/email/balance?walletLocator=${encodeURIComponent(
-            walletAddress
-          )}&tokens=USDC`
-        );
-        const data = await res.json();
-        if (!res.ok) {
-          const errorMessage =
-            data?.error || "Failed to fetch balance from Crossmint.";
+    }
+    try {
+      const res = await fetch(
+        `/api/auth/email/balance?walletLocator=${encodeURIComponent(
+          walletAddress
+        )}&tokens=USDC`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const errorMessage =
+          data?.error || "Failed to fetch balance from Crossmint.";
+        if (balanceErrorRef.current !== errorMessage) {
           setBalanceError(errorMessage);
-          return;
+          balanceErrorRef.current = errorMessage;
         }
-        const tokenList = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.tokens)
-            ? data.tokens
-            : [];
-        const tokenEntry = tokenList.find(
-          (token: any) => String(token?.symbol ?? "").toLowerCase() === "usdc"
-        );
-        const amount =
-          tokenEntry?.amount ??
-          data?.usdc?.amount ??
-          data?.balances?.usdc?.amount ??
-          "0";
-        setBalance(String(amount));
-      } catch (error) {
-        setBalanceError("Failed to fetch balance from Crossmint.");
-      } finally {
+        return;
+      }
+      const tokenList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.tokens)
+          ? data.tokens
+          : [];
+      const tokenEntry = tokenList.find(
+        (token: any) => String(token?.symbol ?? "").toLowerCase() === "usdc"
+      );
+      const amount =
+        tokenEntry?.amount ??
+        data?.usdc?.amount ??
+        data?.balances?.usdc?.amount ??
+        "0";
+      const nextBalance = String(amount);
+      if (lastBalanceRef.current !== nextBalance) {
+        setBalance(nextBalance);
+        lastBalanceRef.current = nextBalance;
+      }
+      if (balanceErrorRef.current !== null) {
+        setBalanceError(null);
+        balanceErrorRef.current = null;
+      }
+    } catch (error) {
+      const errorMessage = "Failed to fetch balance from Crossmint.";
+      if (balanceErrorRef.current !== errorMessage) {
+        setBalanceError(errorMessage);
+        balanceErrorRef.current = errorMessage;
+      }
+    } finally {
+      if (shouldShowLoading) {
         setIsLoadingBalance(false);
       }
-    };
-    fetchBalance();
+      hasLoadedBalanceRef.current = true;
+    }
   }, [walletAddress]);
 
   useEffect(() => {
     if (!walletAddress) return;
-    const fetchActivity = async () => {
+    fetchBalance();
+  }, [fetchBalance, walletAddress]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleRefresh = () => {
+      fetchBalance();
+    };
+    window.addEventListener("wallet:refresh-balance", handleRefresh);
+    return () => {
+      window.removeEventListener("wallet:refresh-balance", handleRefresh);
+    };
+  }, [fetchBalance]);
+
+  const handleTopUp = () => {
+    if (!walletAddress) {
+      alert("Wallet address not available yet. Please try again.");
+      return;
+    }
+    setIsOnrampOpen(true);
+  };
+
+  const fetchActivity = useCallback(async () => {
+    if (!walletAddress) return;
+    const shouldShowLoading = !hasLoadedActivityRef.current;
+    if (shouldShowLoading) {
       setIsLoadingActivity(true);
-      setActivityError(null);
-      try {
-        const res = await fetch(
-          `/api/auth/email/activity?walletLocator=${encodeURIComponent(
-            walletAddress
-          )}&sort=desc&chain=solana&tokens=USDC&status=successful`
-        );
-        const data = await res.json();
-        if (!res.ok) {
-          const errorMessage =
-            data?.error || "Failed to fetch activity from Crossmint.";
+    }
+    try {
+      const res = await fetch(
+        `/api/auth/email/activity?walletLocator=${encodeURIComponent(
+          walletAddress
+        )}&sort=desc&chain=solana&tokens=USDC&status=successful`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const errorMessage =
+          data?.error || "Failed to fetch activity from Crossmint.";
+        if (activityErrorRef.current !== errorMessage) {
           setActivityError(errorMessage);
-          return;
+          activityErrorRef.current = errorMessage;
         }
-        const events = Array.isArray(data?.transfers)
-          ? data.transfers
-          : Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data)
-              ? data
-              : [];
+        return;
+      }
+      const events = Array.isArray(data?.transfers)
+        ? data.transfers
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+      const nextHash = JSON.stringify(events);
+      if (nextHash !== lastActivityHashRef.current) {
         setActivity(events);
-      } catch (error) {
-        setActivityError("Failed to fetch activity from Crossmint.");
-      } finally {
+        lastActivityHashRef.current = nextHash;
+      }
+      if (activityErrorRef.current !== null) {
+        setActivityError(null);
+        activityErrorRef.current = null;
+      }
+    } catch (error) {
+      const errorMessage = "Failed to fetch activity from Crossmint.";
+      if (activityErrorRef.current !== errorMessage) {
+        setActivityError(errorMessage);
+        activityErrorRef.current = errorMessage;
+      }
+    } finally {
+      if (shouldShowLoading) {
         setIsLoadingActivity(false);
       }
-    };
-    fetchActivity();
+      hasLoadedActivityRef.current = true;
+    }
+
   }, [walletAddress]);
+
+  useEffect(() => {
+    if (!walletAddress) return;
+    const runPoll = () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        return;
+      }
+      fetchActivity();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("wallet:refresh-balance"));
+      }
+    };
+    runPoll();
+    const interval = window.setInterval(runPoll, 10000);
+    const handleVisibility = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        runPoll();
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibility);
+    }
+    return () => {
+      window.clearInterval(interval);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibility);
+      }
+    };
+  }, [fetchActivity, walletAddress]);
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
@@ -249,6 +353,15 @@ export function EmailDashboard({
                       </span>
                     </div>
                   )}
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={handleTopUp}
+                      data-fund-button
+                      className="min-w-[72px] rounded-full px-3 py-2 text-center text-xs font-semibold transition-all duration-200 bg-gradient-to-r from-[#ffac44] to-[#ff7a18] text-[#041126] shadow-lg"
+                    >
+                      Top up
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="bg-[#27395d] border border-white/15 p-6 rounded-3xl shadow-lg space-y-4">
@@ -331,6 +444,7 @@ export function EmailDashboard({
                           const isOut = item?.type === "wallets.transfer.out";
                           const direction = isOut ? "Sent" : "Received";
                           const timestamp = formatRelativeTime(item?.completedAt);
+                          const occurredAt = formatTimestamp(item?.completedAt);
                           const txId = item?.onChain?.txId ?? "";
                           const counterparty = isOut
                             ? item?.recipient?.address
@@ -371,6 +485,9 @@ export function EmailDashboard({
                                     <span className="text-xs text-slate-400">
                                       {timestamp}
                                     </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {occurredAt}
                                   </div>
                                   <div className="text-xs text-slate-300 font-mono">
                                     {label} {formatWalletAddress(counterparty ?? "")}
@@ -422,6 +539,28 @@ export function EmailDashboard({
         </section>
       </div>
       <Footer />
+      {isOnrampOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex justify-center bg-black/60 px-4 py-10 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="relative w-full max-w-xl my-auto">
+            <OnrampCheckout
+              onClose={() => setIsOnrampOpen(false)}
+              showReturnLink={false}
+              walletAddress={walletAddress}
+              receiptEmail={emailAddress ?? ""}
+              onPaymentSuccess={() => {
+                fetchBalance();
+                setTimeout(() => {
+                  fetchBalance();
+                }, 3000);
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

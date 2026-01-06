@@ -55,6 +55,12 @@ const request = async <T>({
     status: res.status,
     body: data,
   });
+  if (!res.ok) {
+    console.error("[finyx-wallet-sdk] error", {
+      status: res.status,
+      body: data,
+    });
+  }
   return { ok: res.ok, status: res.status, data };
 };
 
