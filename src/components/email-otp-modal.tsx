@@ -56,6 +56,7 @@ export function EmailOtpModal({
     "--otp-size": "48px",
     "--otp-gap": "10px",
     width: "calc(var(--otp-size) * 6 + var(--otp-gap) * 5)",
+    maxWidth: "100%",
   };
 
   const handleHiddenInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -215,7 +216,7 @@ export function EmailOtpModal({
           <p className="text-sm font-semibold text-slate-700">{email ?? ""}</p>
         </div>
 
-        <div className="mt-8 space-y-4">
+        <div className="mt-8 space-y-4 mx-auto w-full" style={containerStyle}>
           {error ? (
             <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
               <span className="flex h-5 w-5 items-center justify-center rounded-full border border-rose-400 text-[11px] font-semibold text-rose-500">
@@ -224,7 +225,7 @@ export function EmailOtpModal({
               <span>{error}</span>
             </div>
           ) : null}
-          <div className="mx-auto relative" style={containerStyle}>
+          <div className="mx-auto relative w-full">
             <div className="grid grid-cols-6 gap-[var(--otp-gap)]">
               {Array.from({ length: OTP_LENGTH }).map((_, index) => {
                 const isHighlighted = index < highlightCount;
