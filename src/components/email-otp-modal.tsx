@@ -79,6 +79,23 @@ export function EmailOtpModal({
     onOtpChange(next);
   };
 
+  const handleVisiblePaste = (_index: number, event: ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const pasted = sanitizeCode(event.clipboardData?.getData("text") ?? "");
+    if (!pasted) return;
+    const current = Array.from({ length: OTP_LENGTH }, (_, i) => pasted[i] ?? "");
+    setHighlightCount(0);
+    const nextOtp = current.join("").slice(0, OTP_LENGTH);
+    onOtpChange(nextOtp);
+    const nextFocus = (() => {
+      for (let i = 0; i < OTP_LENGTH; i += 1) {
+        if (!current[i]) return i;
+      }
+      return OTP_LENGTH - 1;
+    })();
+    focusInput(nextFocus, { allowFilled: true });
+  };
+
   const focusHiddenInput = () => hiddenInputRef.current?.focus();
 
   const [highlightCount, setHighlightCount] = useState(0);
@@ -243,6 +260,7 @@ export function EmailOtpModal({
                     aria-label={`Digit ${index + 1}`}
                     value={otpChars[index] ?? ""}
                     onChange={(event) => setOtpAt(index, event.target.value)}
+                    onPaste={(event) => handleVisiblePaste(index, event)}
                     onFocus={() => focusInput(index)}
                     onKeyDown={(event) => handleKeyDown(event, index)}
                     onDoubleClick={handleDoubleClick}
