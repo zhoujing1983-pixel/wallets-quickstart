@@ -159,8 +159,8 @@ export function EmailOtpModal({
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center">
-      <div className="relative h-full w-full rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+    <div className="absolute -inset-3 z-50 flex items-center justify-center">
+      <div className="relative h-full w-full rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
         <button
           type="button"
           className="absolute left-6 top-6 text-slate-500 hover:text-slate-900"
@@ -197,98 +197,110 @@ export function EmailOtpModal({
               <span>{error}</span>
             </div>
           ) : null}
-          <div className="flex items-center justify-between gap-2">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <input
-                key={`otp-modal-slot-${index}`}
-                ref={(el) => {
-                  inputRefs.current[index] = el;
-                }}
-                type="text"
-                maxLength={1}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="one-time-code"
-                aria-label={`Digit ${index + 1}`}
-                value={otpChars[index] ?? ""}
-                readOnly={index !== getFirstEmptyIndex()}
-                onChange={(event) => setOtpAt(index, event.target.value)}
-                onFocus={(event) => {
-                  const firstEmpty = getFirstEmptyIndex();
-                  if (highlightFilled) {
+          <div
+            className="mx-auto space-y-4"
+            style={
+              {
+                "--otp-size": "48px",
+                "--otp-gap": "10px",
+                width:
+                  "calc(var(--otp-size) * 6 + var(--otp-gap) * 5)",
+              } as React.CSSProperties
+            }
+          >
+            <div className="flex items-center justify-center gap-[var(--otp-gap)]">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <input
+                  key={`otp-modal-slot-${index}`}
+                  ref={(el) => {
+                    inputRefs.current[index] = el;
+                  }}
+                  type="text"
+                  maxLength={1}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  aria-label={`Digit ${index + 1}`}
+                  value={otpChars[index] ?? ""}
+                  readOnly={index !== getFirstEmptyIndex()}
+                  onChange={(event) => setOtpAt(index, event.target.value)}
+                  onFocus={(event) => {
+                    const firstEmpty = getFirstEmptyIndex();
+                    if (highlightFilled) {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                      return;
+                    }
+                    if (index !== firstEmpty && index !== lastFocusedIndex) {
+                      event.preventDefault();
+                      focusInput(firstEmpty);
+                      return;
+                    }
+                    setLastFocusedIndex(index);
+                    event.currentTarget.select();
+                  }}
+                  onMouseDown={(event) => {
+                    const firstEmpty = getFirstEmptyIndex();
+                    if (highlightFilled) {
+                      event.preventDefault();
+                      setHighlightFilled(false);
+                      focusInput(lastFocusedIndex);
+                      return;
+                    }
+                    if (index !== firstEmpty && index !== lastFocusedIndex) {
+                      event.preventDefault();
+                      focusInput(firstEmpty);
+                    }
+                  }}
+                  onDoubleClick={(event) => {
                     event.preventDefault();
-                    event.currentTarget.blur();
-                    return;
-                  }
-                  if (index !== firstEmpty && index !== lastFocusedIndex) {
-                    event.preventDefault();
-                    focusInput(firstEmpty);
-                    return;
-                  }
-                  setLastFocusedIndex(index);
-                  event.currentTarget.select();
-                }}
-                onMouseDown={(event) => {
-                  const firstEmpty = getFirstEmptyIndex();
-                  if (highlightFilled) {
-                    event.preventDefault();
-                    setHighlightFilled(false);
-                    focusInput(lastFocusedIndex);
-                    return;
-                  }
-                  if (index !== firstEmpty && index !== lastFocusedIndex) {
-                    event.preventDefault();
-                    focusInput(firstEmpty);
-                  }
-                }}
-                onDoubleClick={(event) => {
-                  event.preventDefault();
-                  if (index !== lastFocusedIndex) {
-                    inputRefs.current[lastFocusedIndex]?.blur();
+                    if (index !== lastFocusedIndex) {
+                      inputRefs.current[lastFocusedIndex]?.blur();
+                      setHighlightFilled(true);
+                      return;
+                    }
                     setHighlightFilled(true);
-                    return;
-                  }
-                  setHighlightFilled(true);
-                  event.currentTarget.blur();
-                }}
-                onKeyDown={(event) => handleKeyDown(event, index)}
-                onPaste={handlePaste}
-                className={`h-12 w-12 rounded-xl border text-center text-lg font-semibold text-slate-900 outline-none transition focus:border-2 focus:border-slate-700 ${
-                  otpChars[index] ? "bg-slate-100" : "bg-white"
-                } ${
-                  error
-                    ? "border-rose-300 focus:border-rose-500"
-                    : "border-slate-300"
-                } ${
-                  !error && highlightFilled && otpChars[index]
-                    ? "border-2 border-slate-700"
-                    : ""
-                }`}
-              />
-            ))}
+                    event.currentTarget.blur();
+                  }}
+                  onKeyDown={(event) => handleKeyDown(event, index)}
+                  onPaste={handlePaste}
+                  className={`h-[var(--otp-size)] w-[var(--otp-size)] rounded-xl border text-center text-lg font-semibold text-slate-900 outline-none transition focus:border-2 focus:border-slate-700 ${
+                    otpChars[index] ? "bg-slate-100" : "bg-white"
+                  } ${
+                    error
+                      ? "border-rose-300 focus:border-rose-500"
+                      : "border-slate-300"
+                  } ${
+                    !error && highlightFilled && otpChars[index]
+                      ? "border-2 border-slate-700"
+                      : ""
+                  }`}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isSubmitting || otpChars.filter(Boolean).length < 6}
+              className="w-full rounded-xl bg-slate-900 px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-600"
+            >
+              Confirm
+            </button>
+            <p className="text-center text-xs text-slate-500">
+              Can&apos;t find the email? Check spam folder. Some emails may take
+              several minutes to arrive.
+            </p>
+            <button
+              type="button"
+              onClick={onResend}
+              disabled={isSubmitting || resendSeconds > 0}
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[15px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed"
+            >
+              {resendSeconds > 0
+                ? `Re-send code in ${resendSeconds}s`
+                : "Resend code"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isSubmitting || otpChars.filter(Boolean).length < 6}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-600"
-          >
-            Confirm
-          </button>
-          <p className="text-center text-xs text-slate-500">
-            Can&apos;t find the email? Check spam folder. Some emails may take
-            several minutes to arrive.
-          </p>
-          <button
-            type="button"
-            onClick={onResend}
-            disabled={isSubmitting || resendSeconds > 0}
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[15px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed"
-          >
-            {resendSeconds > 0
-              ? `Re-send code in ${resendSeconds}s`
-              : "Resend code"}
-          </button>
         </div>
       </div>
     </div>
