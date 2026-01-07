@@ -1,5 +1,6 @@
 "use client";
 
+import { AgentChatWidget } from "@/components/agent-chat-widget";
 import { PaymentGate } from "@/components/payment-gate";
 
 export default function Demo402Page() {
@@ -21,10 +22,10 @@ export default function Demo402Page() {
                   Finyx WAAS
                 </p>
                 <h1 className="text-2xl font-semibold text-white">
-                  Agent 驱动的 402 自动支付流程
+                  {/* Agent 驱动的 402 自动支付流程 */}
                 </h1>
                 <p className="mt-2 text-sm text-white/80">
-                  当服务返回 HTTP 402 时，Agent 自动完成支付并继续原始请求
+                  {/* 当服务返回 HTTP 402 时，Agent 自动完成支付并继续原始请求 */}
                 </p>
     
               </div>
@@ -34,6 +35,7 @@ export default function Demo402Page() {
 
         <PaymentGate />
       </div>
+      <AgentChatWidget />
     </div>
   );
 }

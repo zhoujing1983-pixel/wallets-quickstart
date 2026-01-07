@@ -10,6 +10,7 @@ import { LogoutButton } from "./logout";
 import { WalletBalance } from "./balance";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { AgentChatWidget } from "@/components/agent-chat-widget";
 
 export function Dashboard() {
   const { wallet } = useWallet();
@@ -688,6 +689,7 @@ export function Dashboard() {
         </div>
       ) : null}
       <Footer />
+      <AgentChatWidget />
     </div>
   );
 }

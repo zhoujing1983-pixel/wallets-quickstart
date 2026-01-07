@@ -7,6 +7,7 @@ import { LogoutButton } from "./logout";
 import { Footer } from "./footer";
 import { OnrampCheckout } from "@/components/onramp-checkout";
 import { EmailTransferFunds } from "@/components/email-transfer";
+import { AgentChatWidget } from "@/components/agent-chat-widget";
 
 type EmailWallet = {
   address?: string;
@@ -540,6 +541,7 @@ export function EmailDashboard({
         </section>
       </div>
       <Footer />
+      <AgentChatWidget />
       {isOnrampOpen ? (
         <div
           className="fixed inset-0 z-50 flex justify-center bg-black/60 px-4 py-10 overflow-y-auto"

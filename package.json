@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n web,worker -c blue,magenta \"next dev --turbopack\" \"npm run email:worker\"",
+    "dev": "concurrently -k -n web,worker,agent -c blue,magenta,cyan \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
