@@ -288,7 +288,7 @@ export function EmailDashboard({
         <section
           className="rounded-[32px] overflow-hidden shadow-[0_30px_80px_rgba(5,12,41,0.15)]"
           style={{
-            backgroundImage: "url('/dashboard-hero.jpg')",
+            backgroundImage: "url('/dashboard-wallet-security.jpg')",
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}

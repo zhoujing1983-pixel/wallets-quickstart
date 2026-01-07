@@ -93,7 +93,7 @@ export function EmailOtpModal({
       }
       return OTP_LENGTH - 1;
     })();
-    focusInput(nextFocus, { allowFilled: true });
+    focusInput(nextFocus);
   };
 
   const focusHiddenInput = () => hiddenInputRef.current?.focus();
