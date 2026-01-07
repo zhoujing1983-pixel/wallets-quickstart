@@ -7,9 +7,16 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  timestamp: string;
 };
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const createTimestamp = () =>
+  new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 
 export function AgentChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,7 +26,7 @@ export function AgentChatWidget() {
   const [isOnline, setIsOnline] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const assistantAvatar = "/agent/diane-cheung.jpg";
+  const assistantAvatar = "/agent/cat-avatar.jpg";
 
   const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
 
@@ -28,6 +35,7 @@ export function AgentChatWidget() {
       id: "welcome",
       role: "assistant",
       content: AGENT_WELCOME_MESSAGE,
+      timestamp: createTimestamp(),
     };
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem("finyx-agent-chat");
@@ -35,7 +43,11 @@ export function AgentChatWidget() {
       try {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
+          const normalized = parsed.map((msg) => ({
+            ...msg,
+            timestamp: msg.timestamp ?? createTimestamp(),
+          }));
+          setMessages(normalized);
           return;
         }
       } catch {
@@ -73,7 +85,12 @@ export function AgentChatWidget() {
     const prompt = input.trim();
     if (!prompt || isSending) return;
     setInput("");
-    const userMessage: ChatMessage = { id: createId(), role: "user", content: prompt };
+    const userMessage: ChatMessage = {
+      id: createId(),
+      role: "user",
+      content: prompt,
+      timestamp: createTimestamp(),
+    };
     setMessages((prev) => [...prev, userMessage]);
     setIsSending(true);
     try {
@@ -92,7 +109,12 @@ export function AgentChatWidget() {
           : "I did not get a response. Please try again.";
       setMessages((prev) => [
         ...prev,
-        { id: createId(), role: "assistant", content: replyText },
+        {
+          id: createId(),
+          role: "assistant",
+          content: replyText,
+          timestamp: createTimestamp(),
+        },
       ]);
     } catch (error) {
       const message =
@@ -103,6 +125,7 @@ export function AgentChatWidget() {
           id: createId(),
           role: "assistant",
           content: `Sorry, I could not reach the agent. ${message}`,
+          timestamp: createTimestamp(),
         },
       ]);
     } finally {
@@ -116,6 +139,7 @@ export function AgentChatWidget() {
         id: "welcome",
         role: "assistant",
         content: AGENT_WELCOME_MESSAGE,
+        timestamp: createTimestamp(),
       },
     ];
     setMessages(fresh);
@@ -177,34 +201,45 @@ export function AgentChatWidget() {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex items-end gap-2 ${
+                className={`flex items-start gap-2 ${
                   message.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
                 {message.role === "assistant" ? (
-                  <img
-                    src={assistantAvatar}
-                    alt="Agent"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-white shadow-sm"
+                  <div
+                    className="h-10 w-10 rounded-full bg-cover bg-center ring-1 ring-white shadow-sm"
+                    style={{ backgroundImage: `url(${assistantAvatar})` }}
+                    aria-hidden="true"
                   />
                 ) : null}
                 <div
                   className={
                     message.role === "user"
-                      ? "ml-auto w-fit max-w-[76%] rounded-[22px] bg-slate-900 px-4 py-3 text-sm text-white shadow-[0_12px_28px_rgba(15,23,42,0.2)]"
+                      ? "ml-auto w-fit max-w-[76%] rounded-[22px] bg-slate-800/90 px-4 py-3 text-sm text-white shadow-[0_12px_28px_rgba(15,23,42,0.2)]"
                       : "mr-auto w-fit max-w-[76%] rounded-[22px] bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_10px_24px_rgba(15,23,42,0.08)] border border-slate-100"
                   }
                 >
-                  {message.content}
+                  <div className="flex flex-col gap-1 whitespace-pre-wrap break-words">
+                    <span>{message.content}</span>
+                    <span
+                      className={`text-right text-[11px] ${
+                        message.role === "user"
+                          ? "text-slate-200/80"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      {message.timestamp ?? createTimestamp()}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
             {isSending ? (
-              <div className="flex items-center gap-2">
-                <img
-                  src={assistantAvatar}
-                  alt="Agent"
-                  className="h-10 w-10 rounded-full object-cover ring-1 ring-white shadow-sm"
+              <div className="flex items-start gap-2">
+                <div
+                  className="h-10 w-10 rounded-full bg-cover bg-center ring-1 ring-white shadow-sm"
+                  style={{ backgroundImage: `url(${assistantAvatar})` }}
+                  aria-hidden="true"
                 />
                 <div className="mr-auto w-fit rounded-[22px] bg-white px-4 py-3 text-xs text-slate-500 shadow-[0_10px_24px_rgba(15,23,42,0.08)] border border-slate-100">
                   <div className="flex items-center gap-1">
