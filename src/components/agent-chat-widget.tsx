@@ -142,7 +142,7 @@ export function AgentChatWidget() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 font-[var(--font-geist-sans)]">
       {isOpen ? (
         <div className="relative flex h-[600px] w-[380px] max-w-[92vw] flex-col rounded-[32px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.2)] overflow-hidden">
           <div className="relative border-b border-slate-100 bg-gradient-to-b from-slate-50 via-white to-white px-5 pb-4 pt-4">
