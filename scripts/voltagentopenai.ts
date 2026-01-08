@@ -1,4 +1,4 @@
-import { Agent, VoltAgent, tool } from "@voltagent/core";
+import { Agent, Memory, VoltAgent, tool } from "@voltagent/core";
 import { honoServer } from "@voltagent/server-hono";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -6,6 +6,7 @@ import { z } from "zod";
 import readline from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import "dotenv/config";
+import { LibSQLMemoryAdapter } from "@voltagent/libsql";
 
 // Tool to fetch and sanitize website content for summaries.
 const fetchWebsiteTool = tool({
@@ -92,6 +93,33 @@ const fetchWebsiteTool = tool({
     };
   },
 });
+
+const memoryUrl = process.env.VOLTAGENT_MEMORY_URL ?? "file:./agent-memory.db";
+const memory = new Memory({
+  storage: new LibSQLMemoryAdapter({ url: memoryUrl }),
+});
+console.log(`[memory] persisting conversations at ${memoryUrl}`);
+
+const memoryAny = memory as Memory & Record<string, any>;
+const wrapMemoryMethod = (name: string) => {
+  const original = memoryAny[name]?.bind(memory);
+  if (typeof original !== "function") {
+    return;
+  }
+  memoryAny[name] = async (...args: unknown[]) => {
+    console.log(`[memory:${name}]`, args);
+    try {
+      const result = await original(...args);
+      console.log(`[memory:${name}] success`);
+      return result;
+    } catch (error) {
+      console.error(`[memory:${name}] failed`, error);
+      throw error;
+    }
+  };
+};
+wrapMemoryMethod("addMessage");
+wrapMemoryMethod("saveMessage");
 
 // Convert a secret into a short masked string.
 const maskSecret = (value: unknown) => {
@@ -256,11 +284,12 @@ const model =
 
 // Main agent instance with tools and hooks.
 const agent = new Agent({
-  name: "Finyx WaaS Agent",
+  name: "FinyxWaaSAgent",
   instructions,
   model,
   // temperature: 0,
   tools: [fetchWebsiteTool],
+  memory,
   hooks: {
     onToolStart: ({ tool, args }) => {
       console.log("\n[tool:start]", tool.name, args);

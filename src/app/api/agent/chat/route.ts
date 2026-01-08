@@ -10,13 +10,15 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const agentId = "Finyx WaaS Agent";
+    const agentId = "FinyxWaaSAgent";
+    const options =
+      body?.options && typeof body.options === "object" ? body.options : undefined;
     const res = await fetch(
       `http://localhost:3141/agents/${encodeURIComponent(agentId)}/text`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify(options ? { input, options } : { input }),
       }
     );
     const data = await res.json();

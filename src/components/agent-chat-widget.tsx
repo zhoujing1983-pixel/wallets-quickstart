@@ -26,6 +26,8 @@ export function AgentChatWidget() {
   const [isOnline, setIsOnline] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const userIdRef = useRef<string>("");
+  const conversationIdRef = useRef<string>("");
   const assistantAvatar = "/agent/cat-avatar.jpg";
 
   const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
@@ -38,6 +40,15 @@ export function AgentChatWidget() {
       timestamp: createTimestamp(),
     };
     if (typeof window === "undefined") return;
+    const getOrCreateId = (key: string) => {
+      const existing = window.localStorage.getItem(key);
+      if (existing) return existing;
+      const next = createId();
+      window.localStorage.setItem(key, next);
+      return next;
+    };
+    userIdRef.current = getOrCreateId("finyx-agent-user-id");
+    conversationIdRef.current = getOrCreateId("finyx-agent-conversation-id");
     const stored = window.localStorage.getItem("finyx-agent-chat");
     if (stored) {
       try {
@@ -97,7 +108,13 @@ export function AgentChatWidget() {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: prompt }),
+        body: JSON.stringify({
+          input: prompt,
+          options: {
+            userId: userIdRef.current,
+            conversationId: conversationIdRef.current,
+          },
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data?.success) {
@@ -145,6 +162,9 @@ export function AgentChatWidget() {
     setMessages(fresh);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("finyx-agent-chat", JSON.stringify(fresh));
+      const nextConversationId = createId();
+      window.localStorage.setItem("finyx-agent-conversation-id", nextConversationId);
+      conversationIdRef.current = nextConversationId;
     }
   };
 

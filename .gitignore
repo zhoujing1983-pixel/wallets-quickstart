@@ -41,4 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 # voltagent memory
-/agent-memory.db*
+# SQLite memory persistence
+agent-memory.db*
+# libSQL default data file
+data.sqld

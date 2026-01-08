@@ -64,6 +64,7 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
    CROSSMINT_SERVER_SIDE_API_KEY=your_server_side_api_key
    CROSSMINT_ENV=staging # switch to "production" for live usage
    ```
+   > VoltAgent persists memory to `agent-memory.db` by default; set `VOLTAGENT_MEMORY_URL=file:./agent-memory.db` (or another LibSQL URL) in `.env` if you need a different location.
 7. Run the dev server:
    ```bash
    npm run dev
@@ -86,11 +87,56 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
 - Start the local agent: `npm run agent:start`
 - Start the OpenAI agent: `npm run agent:openai`
 - Watch mode for local agent: `npm run agent:dev`
+- Start the OpenAI agent in a local-only (+VoltAgent websocket proxy) mode: `npm run agent:openai:local`
+
+## Utility scripts
+- Create or refresh the treasury wallet used by the demo flows: `npm run treasure:wallet`
+- Send queued emails through your configured SMTP server: `npm run email:worker`
+
+## Developer dependencies
+When you run `npm run dev` the stack relies on several services. Use the provided npm scripts to bring them up in the correct order:
+
+### macOS installation
+Install the required tools before you start:
+
+```bash
+brew install colima redis libsql
+colima start   # initialize docker daemon via Colima
+```
+
+`colima` gives you a lightweight Docker runtime, and `redis` provides the queue backend. If you prefer not to use Homebrew, follow the macOS sections on the [Colima](https://github.com/abiosoft/colima) and [Redis](https://redis.io/docs/getting-started/installation/install-redis-on-macos/) sites.
+
+`npm run colima:start` is just a shortcut for `colima start` so you can launch the Colima-managed Docker daemon from within this project; Colima spins up the VM and `dockerd` underneath so later commands can talk to Docker. Use `npm run colima:stop` when you no longer need the daemon.
+
+1. **Colima daemon** (macOS): `npm run colima:start` (and `npm run colima:stop` to tear it down).
+2. **Docker Compose**: `npm run docker:up` to start the containers defined in `docker-compose.yml`. Redis is included in that stack, so you can ignore step 3 unless you prefer a host service.
+3. **Redis** (optional): `npm run redis:start` starts Redis via Homebrew if you’re not relying on Docker for it—running it alongside the container stack may cause port conflicts, so skip this step when using Compose.
+4. **Persistence file**: the agent stores memory directly in `agent-memory.db` under this project root; set `VOLTAGENT_MEMORY_URL` if you want to point the same LibSQL store somewhere else before starting the stack.
+
+For convenience, start Colima and Docker Compose together with:
+
+```bash
+npm run dev:init
+```
+
+Once the services are running, `npm run dev` can bring up the Next.js app + worker + agent simultaneously. For convenience there is a single command that sequences everything:
+
+```bash
+npm run dev:all
+```
+
+When you’re done, tear everything down with:
+
+```bash
+npm run dev-shutdown
+```
+
+This script runs `docker:up` before launching `npm run dev`. If you see `MallocStackLogging: can't turn off malloc stack logging` in your terminal on macOS, it is harmless; to suppress it you can run `unset MallocStackLogging` before starting `npm run dev` (or rely on the done-for-you `npm run dev` where the `predev` hook already unsets it).
 
 ## Qwen (DashScope) setup
 If you want to run the agent on Qwen via the OpenAI-compatible endpoint:
 ```
-MODEL_PROVIDER=qwen
+ MODEL_PROVIDER=qwen
 QWEN_API_KEY=your_dashscope_key
 QWEN_MODEL=qwen-plus-latest
 # Optional:
