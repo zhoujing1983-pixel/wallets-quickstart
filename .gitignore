@@ -45,3 +45,5 @@ next-env.d.ts
 agent-memory.db*
 # libSQL default data file
 data.sqld
+
+rag-docs

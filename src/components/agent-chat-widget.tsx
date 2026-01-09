@@ -10,6 +10,11 @@ type ChatMessage = {
   timestamp: string;
 };
 
+type AgentChatWidgetProps = {
+  variant?: "floating" | "panel";
+  defaultOpen?: boolean;
+};
+
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const createTimestamp = () =>
   new Date().toLocaleTimeString([], {
@@ -18,13 +23,18 @@ const createTimestamp = () =>
     second: "2-digit",
   });
 
-export function AgentChatWidget() {
-  const [isOpen, setIsOpen] = useState(false);
+export function AgentChatWidget({
+  variant = "floating",
+  defaultOpen = false,
+}: AgentChatWidgetProps) {
+  const isPanel = variant === "panel";
+  const [isOpen, setIsOpen] = useState(isPanel || defaultOpen);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  const [useLlmDirectly, setUseLlmDirectly] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const userIdRef = useRef<string>("");
   const conversationIdRef = useRef<string>("");
@@ -50,6 +60,10 @@ export function AgentChatWidget() {
     userIdRef.current = getOrCreateId("finyx-agent-user-id");
     conversationIdRef.current = getOrCreateId("finyx-agent-conversation-id");
     const stored = window.localStorage.getItem("finyx-agent-chat");
+    const ragMode = window.localStorage.getItem("finyx-agent-rag-mode");
+    if (ragMode === "llm") {
+      setUseLlmDirectly(true);
+    }
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
@@ -113,6 +127,7 @@ export function AgentChatWidget() {
           options: {
             userId: userIdRef.current,
             conversationId: conversationIdRef.current,
+            ragMode: useLlmDirectly ? "llm" : "rag",
           },
         }),
       });
@@ -178,6 +193,16 @@ export function AgentChatWidget() {
     setIsCloseConfirmOpen(false);
   };
 
+  const toggleRagMode = () => {
+    setUseLlmDirectly((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("finyx-agent-rag-mode", next ? "llm" : "rag");
+      }
+      return next;
+    });
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -185,29 +210,39 @@ export function AgentChatWidget() {
     }
   };
 
+  const containerClass = isPanel
+    ? "relative flex h-full w-full flex-col font-[var(--font-geist-sans)]"
+    : "fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 font-[var(--font-geist-sans)]";
+
+  const chatShellClass = isPanel
+    ? "relative flex h-full w-full flex-col rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_40px_rgba(15,23,42,0.12)] overflow-hidden"
+    : "relative flex h-[600px] w-[380px] max-w-[92vw] flex-col rounded-[32px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.2)] overflow-hidden";
+
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 font-[var(--font-geist-sans)]">
+    <div className={containerClass}>
       {isOpen ? (
-        <div className="relative flex h-[600px] w-[380px] max-w-[92vw] flex-col rounded-[32px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.2)] overflow-hidden">
+        <div className={chatShellClass}>
           <div className="relative border-b border-slate-100 bg-gradient-to-b from-slate-50 via-white to-white px-5 pb-4 pt-4">
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                aria-label="Close chat"
-                onClick={handleCloseChat}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200"
-              >
-                <img src="/agent/close.svg" alt="Close" className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Minimize chat"
-                onClick={() => setIsOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200"
-              >
-                <img src="/agent/minimize.svg" alt="" className="h-4 w-4" />
-              </button>
-            </div>
+            {!isPanel ? (
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  aria-label="Close chat"
+                  onClick={handleCloseChat}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200"
+                >
+                  <img src="/agent/close.svg" alt="Close" className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Minimize chat"
+                  onClick={() => setIsOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200"
+                >
+                  <img src="/agent/minimize.svg" alt="" className="h-4 w-4" />
+                </button>
+              </div>
+            ) : null}
           </div>
           {!isOnline ? (
             <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -304,17 +339,37 @@ export function AgentChatWidget() {
               </button>
             </div>
             <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-              <button
-                type="button"
-                onClick={handleClear}
-                className="rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-500 hover:text-slate-700"
-              >
-                Clear chat
-              </button>
-              <span>Powered by Finyx Agent</span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-500 hover:text-slate-700"
+                >
+                  Clear chat
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleRagMode}
+                    className="relative h-6 w-11 rounded-full border border-slate-200 bg-slate-100 transition"
+                  >
+                    <span
+                      className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
+                        useLlmDirectly
+                          ? "left-6 bg-slate-900"
+                          : "left-1 bg-slate-400"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-[11px] text-slate-500">LLM</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-[#f5b347]">
+                Powered by Finyx
+              </span>
             </div>
           </div>
-          {isCloseConfirmOpen ? (
+          {isCloseConfirmOpen && !isPanel ? (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-900/25 backdrop-blur-sm">
               <div className="relative w-[86%] rounded-[24px] bg-white px-6 pb-6 pt-10 shadow-[0_30px_70px_rgba(15,23,42,0.3)]">
                 <button
@@ -343,18 +398,20 @@ export function AgentChatWidget() {
           ) : null}
         </div>
       ) : null}
-      <button
-        type="button"
-        aria-label="Open chat"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="group flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-[0_14px_36px_rgba(15,23,42,0.4)] hover:bg-slate-800"
-      >
-        <img
-          src="/agent/robot.svg"
-          alt="Open agent chat"
-          className="h-6 w-6 transition-transform group-hover:scale-105"
-        />
-      </button>
+      {!isPanel ? (
+        <button
+          type="button"
+          aria-label="Open chat"
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="group flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-[0_14px_36px_rgba(15,23,42,0.4)] hover:bg-slate-800"
+        >
+          <img
+            src="/agent/robot.svg"
+            alt="Open agent chat"
+            className="h-6 w-6 transition-transform group-hover:scale-105"
+          />
+        </button>
+      ) : null}
     </div>
   );
 }

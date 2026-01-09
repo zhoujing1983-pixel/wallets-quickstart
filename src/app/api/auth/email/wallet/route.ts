@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "node:crypto";
 import { createWallet } from "@/lib/finyx-wallet-sdk";
 
 const CROSSMINT_SERVER_SIDE_API_KEY = process.env
@@ -12,6 +13,11 @@ const getChainType = (chain: string) => {
   if (normalized.includes("aptos")) return "aptos";
   if (normalized.includes("sui")) return "sui";
   return "evm";
+};
+
+const hashEmailAlias = (email: string) => {
+  const hash = crypto.createHash("sha256").update(email).digest("hex");
+  return `${hash.slice(0, 8)}${hash.slice(-8)}`;
 };
 
 export async function GET(req: NextRequest) {
@@ -33,7 +39,7 @@ export async function GET(req: NextRequest) {
     const chainType = getChainType(chain);
     const walletAliasBase = process.env.CROSSMINT_WALLET_ALIAS ?? "server";
     const walletEnv = process.env.CROSSMINT_ENV ?? "staging";
-    const walletAlias = `${walletAliasBase}-${walletEnv}`;
+    const walletAlias = `${walletAliasBase}-${walletEnv}-${hashEmailAlias(email)}`;
     const walletRequestBody = {
       chainType,
       type: "smart",

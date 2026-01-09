@@ -89,6 +89,17 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
 - Watch mode for local agent: `npm run agent:dev`
 - Start the OpenAI agent in a local-only (+VoltAgent websocket proxy) mode: `npm run agent:openai:local`
 
+## Local RAG MVP
+The chat widget can answer simple questions locally without VoltAgent by using a lightweight SQLite + sqlite-vec RAG flow with Qwen embeddings.
+
+- Default mode: `AGENT_PROXY_MODE=local-rag` (built-in).
+- Hybrid mode: `AGENT_PROXY_MODE=hybrid` uses local RAG first, then falls back to VoltAgent when distance is above `RAG_DISTANCE_THRESHOLD`.
+- VoltAgent mode: `AGENT_PROXY_MODE=voltagent` to proxy requests to `http://localhost:3141`.
+- Ingest directory: set `RAG_INGEST_DIR` to point at a folder of docs (defaults to `./rag-docs`, supports md/txt/code/pdf/docx/xlsx).
+- Embeddings: `RAG_EMBEDDING_MODEL` uses the Qwen OpenAI-compatible embeddings endpoint (`QWEN_BASE_URL`, `QWEN_API_KEY`).
+- Reindex: set `RAG_FORCE_REINDEX=true` to rebuild embeddings after content changes.
+- Optional: set `LOCAL_RAG_DB_PATH` to choose a different SQLite file (defaults to `./local-rag-vec.db`).
+
 ## Utility scripts
 - Create or refresh the treasury wallet used by the demo flows: `npm run treasure:wallet`
 - Send queued emails through your configured SMTP server: `npm run email:worker`
