@@ -157,11 +157,15 @@ export function EmailTransferFunds({
 
   const openOtpModal = () => {
     setOtpOpen(true);
-    setOtpStep("send");
+    if (otpResendAvailableAt && getResendSeconds(otpResendAvailableAt) > 0) {
+      setOtpStep("verify");
+    } else {
+      setOtpStep("send");
+      setOtpEmailId(null);
+      setOtpResendAvailableAt(null);
+      setOtpCode("");
+    }
     setOtpError(null);
-    setOtpCode("");
-    setOtpEmailId(null);
-    setOtpResendAvailableAt(null);
   };
 
   const handleSendOtp = async () => {
@@ -468,8 +472,6 @@ export function EmailTransferFunds({
           setOtpOpen(false);
           setOtpPendingTransfer(false);
           setOtpError(null);
-          setOtpStep("send");
-          setOtpCode("");
         }}
         onSendCode={handleSendOtp}
         onCodeChange={setOtpCode}

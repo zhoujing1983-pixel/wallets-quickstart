@@ -326,7 +326,7 @@ export function EmailDashboard({
             </div>
             <div className="flex items-center gap-3">
               <Link
-                href="/402"
+                href="/finyx/402"
                 className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold text-[#041126] bg-white/90 border border-white/60 shadow-lg transition hover:bg-white"
               >
                 402 Demo

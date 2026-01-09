@@ -10,6 +10,8 @@ type TransferOtpModalProps = {
   resendSeconds: number;
   isSubmitting: boolean;
   error?: string | null;
+  introTitle?: string;
+  introDescription?: string;
   onClose: () => void;
   onSendCode: () => void;
   onCodeChange: (value: string) => void;
@@ -25,6 +27,8 @@ export function TransferOtpModal({
   resendSeconds,
   isSubmitting,
   error,
+  introTitle,
+  introDescription,
   onClose,
   onSendCode,
   onCodeChange,
@@ -32,6 +36,10 @@ export function TransferOtpModal({
   onResend,
 }: TransferOtpModalProps) {
   const safeEmail = useMemo(() => email ?? "", [email]);
+  const resolvedIntroTitle = introTitle ?? "Confirm it's you";
+  const resolvedIntroDescription =
+    introDescription ??
+    "You're using this wallet for the first time on this device. Click 'Send code' to get a one-time verification code.";
 
   if (!open) return null;
 
@@ -51,11 +59,10 @@ export function TransferOtpModal({
           <div className="space-y-6">
             <div className="space-y-3">
               <h3 className="text-3xl font-semibold text-slate-900">
-                Confirm it&apos;s you
+                {resolvedIntroTitle}
               </h3>
               <p className="text-sm text-slate-500">
-                You&apos;re using this wallet for the first time on this device.
-                Click &apos;Send code&apos; to get a one-time verification code.
+                {resolvedIntroDescription}
               </p>
             </div>
 
@@ -136,6 +143,7 @@ export function TransferOtpModal({
                 placeholder="Enter code"
                 value={code}
                 maxLength={10}
+                autoFocus
                 onChange={(event) => {
                   const next = event.target.value.replace(/\D/g, "");
                   onCodeChange(next.slice(0, 10));

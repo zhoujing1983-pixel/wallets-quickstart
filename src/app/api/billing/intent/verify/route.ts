@@ -7,6 +7,8 @@ const BILLING_AUTH_SECRET =
   process.env.BILLING_AUTH_SECRET ?? "dev-auth-secret-change-me";
 const SOLANA_RPC_URL =
   process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
+const TRANSFER_OTP_COOKIE = "finyx_transfer_otp";
+const EMAIL_COOKIE = "finyx_email";
 
 type IntentChallengePayload = {
   type: "intent-challenge";
@@ -43,8 +45,11 @@ export async function POST(req: NextRequest) {
   const walletAddress =
     typeof body?.walletAddress === "string" ? body.walletAddress : "";
   const chain = typeof body?.chain === "string" ? body.chain : "";
+  const transferOtp = req.cookies.get(TRANSFER_OTP_COOKIE)?.value ?? "";
+  const emailSession = req.cookies.get(EMAIL_COOKIE)?.value ?? "";
 
-  if (!intentToken || !signature || !walletAddress) {
+  const hasOtp = Boolean(transferOtp && emailSession);
+  if (!intentToken || !walletAddress || (!signature && !hasOtp)) {
     return NextResponse.json(
       { error: "missing_fields" },
       { status: 400 }
@@ -71,7 +76,9 @@ export async function POST(req: NextRequest) {
   }
 
   let signatureVerified = false;
-  if (isEvmAddress(walletAddress) && signature.startsWith("0x")) {
+  if (hasOtp) {
+    signatureVerified = true;
+  } else if (isEvmAddress(walletAddress) && signature.startsWith("0x")) {
     try {
       signatureVerified = await verifyMessage({
         address: walletAddress as `0x${string}`,
