@@ -37,7 +37,10 @@ export default function FinyxDashboardPage() {
   const isEmailWalletPending =
     hasEmailSession && !wallet && isLoadingEmailWallet;
   const shouldShowLoading =
-    !hasReadyOnce || isLoggingOut || isCheckingEmailSession || isEmailWalletPending;
+    !hasReadyOnce ||
+    isLoggingOut ||
+    isCheckingEmailSession ||
+    isEmailWalletPending;
   const shouldShowEmailDashboard = !wallet && hasEmailSession;
 
   useEffect(() => {

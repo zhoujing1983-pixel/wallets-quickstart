@@ -20,7 +20,8 @@ const sections = [
     id: "knowledge",
     label: "Knowledge Base",
     title: "Knowledge Base",
-    description: "Manage indexed documents, chunking rules, and embedding updates.",
+    description:
+      "Manage indexed documents, chunking rules, and embedding updates.",
     bullets: [
       "Review indexed files and chunk counts.",
       "Trigger a forced reindex when sources change.",
@@ -77,40 +78,40 @@ export default function AgentManagementPage() {
               AI Agent Operations Console
             </h1>
             <p className="max-w-3xl text-sm text-white/80">
-              Manage knowledge, tools, and runtime behavior from a single command
-              center.
+              Manage knowledge, tools, and runtime behavior from a single
+              command center.
             </p>
           </div>
         </section>
 
         <div className="flex min-h-[calc(100vh-22rem)] gap-6">
           <aside className="w-64 shrink-0">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Agent Admin
-            </p>
-            <nav className="mt-5 flex flex-col gap-2">
-              {sections.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => setActiveId(section.id)}
-                  className={`flex items-center justify-between rounded-xl px-4 py-3 text-left text-sm transition ${
-                    activeId === section.id
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  <span className="font-medium">{section.label}</span>
-                  <span className="text-xs opacity-70">↗</span>
-                </button>
-              ))}
-            </nav>
-            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-              Future tools and admin panels can be added here.
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Agent Admin
+              </p>
+              <nav className="mt-5 flex flex-col gap-2">
+                {sections.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => setActiveId(section.id)}
+                    className={`flex items-center justify-between rounded-xl px-4 py-3 text-left text-sm transition ${
+                      activeId === section.id
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span className="font-medium">{section.label}</span>
+                    <span className="text-xs opacity-70">↗</span>
+                  </button>
+                ))}
+              </nav>
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                Future tools and admin panels can be added here.
+              </div>
             </div>
-          </div>
-        </aside>
+          </aside>
 
           <main className="flex-1">
             <div className="rounded-3xl border border-slate-200 bg-white px-10 py-10 shadow-sm">

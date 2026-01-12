@@ -27,7 +27,6 @@ export default function Demo402Page() {
                 <p className="mt-2 text-sm text-white/80">
                   {/* 当服务返回 HTTP 402 时，Agent 自动完成支付并继续原始请求 */}
                 </p>
-    
               </div>
             </div>
           </div>
