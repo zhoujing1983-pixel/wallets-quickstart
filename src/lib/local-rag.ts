@@ -216,7 +216,10 @@ const loadIngestDocs = async () => {
 const getEmbeddingConfig = () => {
   const apiKey =
     process.env.QWEN_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "";
-  const baseURL = process.env.QWEN_BASE_URL ?? DEFAULT_BASE_URL;
+  const baseURL =
+    process.env.RAG_EMBEDDING_BASE_URL ??
+    process.env.QWEN_BASE_URL ??
+    DEFAULT_BASE_URL;
   const model =
     process.env.RAG_EMBEDDING_MODEL ??
     process.env.QWEN_EMBEDDING_MODEL ??
@@ -227,15 +230,21 @@ const getEmbeddingConfig = () => {
 // Call embeddings endpoint in batches.
 const embedTexts = async (texts: string[]) => {
   const { apiKey, baseURL, model } = getEmbeddingConfig();
-  if (!apiKey) {
+  const isLocalBase =
+    baseURL.startsWith("http://127.0.0.1:1234") ||
+    baseURL.startsWith("http://localhost:1234");
+  if (!apiKey && !isLocalBase) {
     throw new Error("Missing QWEN_API_KEY or DASHSCOPE_API_KEY for embeddings.");
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
   }
   const res = await fetch(`${baseURL}/embeddings`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({ model, input: texts }),
   });
   if (!res.ok) {

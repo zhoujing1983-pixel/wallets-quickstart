@@ -22,6 +22,26 @@ const createTimestamp = () =>
     minute: "2-digit",
     second: "2-digit",
   });
+const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/gi;
+
+const splitThinkContent = (content: string) => {
+  THINK_TAG_REGEX.lastIndex = 0;
+  const thinkChunks: string[] = [];
+  let match: RegExpExecArray | null = null;
+  while ((match = THINK_TAG_REGEX.exec(content)) !== null) {
+    if (match[1]) {
+      const cleaned = match[1].trim();
+      if (cleaned) {
+        thinkChunks.push(cleaned);
+      }
+    }
+  }
+  const answer = content.replace(THINK_TAG_REGEX, "").trim();
+  return {
+    think: thinkChunks.length > 0 ? thinkChunks.join("\n\n") : null,
+    answer,
+  };
+};
 
 export function AgentChatWidget({
   variant = "floating",
@@ -35,6 +55,11 @@ export function AgentChatWidget({
   const [isOnline, setIsOnline] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const [useLlmDirectly, setUseLlmDirectly] = useState(false);
+  const [useThink, setUseThink] = useState(false);
+  const [supportsThink, setSupportsThink] = useState(false);
+  const [expandedThinks, setExpandedThinks] = useState<Record<string, boolean>>(
+    {}
+  );
   const listRef = useRef<HTMLDivElement | null>(null);
   const userIdRef = useRef<string>("");
   const conversationIdRef = useRef<string>("");
@@ -61,6 +86,7 @@ export function AgentChatWidget({
     conversationIdRef.current = getOrCreateId("finyx-agent-conversation-id");
     const stored = window.localStorage.getItem("finyx-agent-chat");
     const ragMode = window.localStorage.getItem("finyx-agent-rag-mode");
+    const thinkMode = window.localStorage.getItem("finyx-agent-think-mode");
     if (ragMode === "llm") {
       setUseLlmDirectly(true);
     }
@@ -80,6 +106,40 @@ export function AgentChatWidget({
       }
     }
     setMessages([defaultMessage]);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadConfig = async () => {
+      try {
+        const res = await fetch("/api/agent/config");
+        const data = await res.json();
+        if (!mounted) return;
+        if (res.ok && data?.success) {
+          const supported = Boolean(data?.data?.supportsThink);
+          setSupportsThink(supported);
+          if (supported) {
+            const thinkMode = window.localStorage.getItem("finyx-agent-think-mode");
+            if (thinkMode === "on") {
+              setUseThink(true);
+            }
+          } else {
+            setUseThink(false);
+          }
+        }
+      } catch {
+        if (mounted) {
+          setSupportsThink(false);
+          setUseThink(false);
+        }
+      }
+    };
+    if (typeof window !== "undefined") {
+      loadConfig();
+    }
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -109,6 +169,10 @@ export function AgentChatWidget({
   const sendMessage = async () => {
     const prompt = input.trim();
     if (!prompt || isSending) return;
+    const requestPrompt =
+      supportsThink && !useThink && !prompt.includes("/no_think")
+        ? `${prompt} /no_think`
+        : prompt;
     setInput("");
     const userMessage: ChatMessage = {
       id: createId(),
@@ -123,7 +187,7 @@ export function AgentChatWidget({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: prompt,
+          input: requestPrompt,
           options: {
             userId: userIdRef.current,
             conversationId: conversationIdRef.current,
@@ -203,6 +267,23 @@ export function AgentChatWidget({
     });
   };
 
+  const toggleThinkMode = () => {
+    setUseThink((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("finyx-agent-think-mode", next ? "on" : "off");
+      }
+      return next;
+    });
+  };
+
+  const toggleThinkPanel = (messageId: string) => {
+    setExpandedThinks((prev) => ({
+      ...prev,
+      [messageId]: !prev[messageId],
+    }));
+  };
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -275,7 +356,38 @@ export function AgentChatWidget({
                   }
                 >
                   <div className="flex flex-col gap-1 whitespace-pre-wrap break-words">
-                    <span>{message.content}</span>
+                    {message.role === "assistant" ? (
+                      (() => {
+                        const { think, answer } = splitThinkContent(message.content);
+                        const showThink = useThink && Boolean(think);
+                        const isExpanded = Boolean(expandedThinks[message.id]);
+                        return (
+                          <>
+                            {showThink ? (
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleThinkPanel(message.id)}
+                                  className="h-5 w-5 rounded-full border border-slate-200 bg-slate-50 text-[12px] font-semibold text-slate-600"
+                                  aria-label="Toggle think details"
+                                >
+                                  {isExpanded ? "v" : ">"}
+                                </button>
+                                <span>Think</span>
+                              </div>
+                            ) : null}
+                            {showThink && isExpanded ? (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600 whitespace-pre-wrap">
+                                {think}
+                              </div>
+                            ) : null}
+                            <span>{answer}</span>
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <span>{message.content}</span>
+                    )}
                     <span
                       className={`text-right text-[11px] ${
                         message.role === "user"
@@ -363,6 +475,24 @@ export function AgentChatWidget({
                   </button>
                   <span className="text-[11px] text-slate-500">LLM</span>
                 </div>
+                {supportsThink ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleThinkMode}
+                      className="relative h-6 w-11 rounded-full border border-slate-200 bg-slate-100 transition"
+                    >
+                      <span
+                        className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
+                          useThink
+                            ? "left-6 bg-slate-900"
+                            : "left-1 bg-slate-400"
+                        }`}
+                      />
+                    </button>
+                    <span className="text-[11px] text-slate-500">Think</span>
+                  </div>
+                ) : null}
               </div>
               <span className="text-[11px] font-semibold text-[#f5b347]">
                 Powered by Finyx

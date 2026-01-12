@@ -154,5 +154,21 @@ QWEN_MODEL=qwen-plus-latest
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
 
+## LM Studio setup
+If you want to run the agent against LM Studio locally:
+```
+MODEL_PROVIDER=lmstudio
+LM_STUDIO_MODEL=qwen/qwen3-4b
+LM_STUDIO_TEMPERATURE=0.7
+LM_STUDIO_MAX_TOKENS=-1
+LM_STUDIO_NO_THINK=false
+```
+
+## Think toggle (UI)
+The chat widget can show a Think switch only for models that support it:
+```
+AGENT_THINK_MODELS=qwen/qwen3-4b,qwen/qwen2.5-7b
+```
+
 ## Using in production
 1. Create a [production Crossmint API key](https://docs.crossmint.com/introduction/platform/api-keys/client-side) and swap it into `NEXT_PUBLIC_FINYX_API_KEY` before you deploy.

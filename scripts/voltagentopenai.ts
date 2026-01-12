@@ -101,15 +101,37 @@ const memory = new Memory({
 console.log(`[memory] persisting conversations at ${memoryUrl}`);
 
 const memoryAny = memory as Memory & Record<string, any>;
+const stripNoThinkFromText = (text: string) =>
+  text.replace(/\s*\/no_think\b/g, "").trim();
+
+const stripNoThinkFromValue = (value: unknown): unknown => {
+  if (typeof value === "string") {
+    return stripNoThinkFromText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => stripNoThinkFromValue(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+        key,
+        stripNoThinkFromValue(val),
+      ])
+    );
+  }
+  return value;
+};
+
 const wrapMemoryMethod = (name: string) => {
   const original = memoryAny[name]?.bind(memory);
   if (typeof original !== "function") {
     return;
   }
   memoryAny[name] = async (...args: unknown[]) => {
-    console.log(`[memory:${name}]`, args);
+    const sanitizedArgs = args.map(stripNoThinkFromValue);
+    console.log(`[memory:${name}]`, sanitizedArgs);
     try {
-      const result = await original(...args);
+      const result = await original(...sanitizedArgs);
       console.log(`[memory:${name}] success`);
       return result;
     } catch (error) {
@@ -227,12 +249,69 @@ const rewriteDeveloperRole = (body: string) => {
   return JSON.stringify(payload);
 };
 
+const appendNoThinkToBody = (body: string) => {
+  try {
+    const payload = JSON.parse(body);
+    if (!Array.isArray(payload?.messages)) {
+      return body;
+    }
+    for (let i = payload.messages.length - 1; i >= 0; i -= 1) {
+      const message = payload.messages[i];
+      if (message?.role !== "user") {
+        continue;
+      }
+      if (typeof message.content === "string") {
+        if (!message.content.includes("/no_think")) {
+          message.content = `${message.content} /no_think`;
+        }
+        break;
+      }
+      if (Array.isArray(message.content)) {
+        const hasNoThink = message.content.some(
+          (part: { text?: unknown }) =>
+            typeof part?.text === "string" && part.text.includes("/no_think")
+        );
+        if (!hasNoThink) {
+          message.content = [
+            ...message.content,
+            { type: "text", text: " /no_think" },
+          ];
+        }
+        break;
+      }
+      break;
+    }
+    return JSON.stringify(payload);
+  } catch {
+    return body;
+  }
+};
+
+const parseOptionalNumber = (value: string | undefined) => {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const lmStudioNoThink =
+  (process.env.LM_STUDIO_NO_THINK ?? "").toLowerCase() === "true";
+
 // OpenAI-compatible provider for local Ollama.
-const openaiProvider = createOpenAI({
-  // Ollama's OpenAI-compatible endpoint
+const ollamaProvider = createOpenAI({
+  // Ollama's OpenAI-compatible endpoint.
   baseURL: "http://localhost:11434/v1",
   apiKey: "ollama",
   fetch: createLoggedFetch("openai"),
+});
+
+// OpenAI-compatible provider for local LM Studio.
+const lmStudioProvider = createOpenAI({
+  baseURL: "http://127.0.0.1:1234/v1",
+  apiKey: "lmstudio",
+  fetch: createLoggedFetch("lmstudio", (body) => {
+    const next = rewriteDeveloperRole(body);
+    return lmStudioNoThink ? appendNoThinkToBody(next) : next;
+  }),
 });
 
 // Qwen provider using OpenAI-compatible API.
@@ -262,6 +341,12 @@ if (!instructions) {
 
 // Selected model provider from environment.
 const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
+const lmStudioTemperature = parseOptionalNumber(process.env.LM_STUDIO_TEMPERATURE);
+const lmStudioMaxTokens = parseOptionalNumber(process.env.LM_STUDIO_MAX_TOKENS);
+const lmStudioMaxOutputTokens =
+  lmStudioMaxTokens !== undefined && lmStudioMaxTokens >= 1
+    ? lmStudioMaxTokens
+    : undefined;
 
 if (provider === "google" && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
   throw new Error("Missing GOOGLE_GENERATIVE_AI_API_KEY in .env");
@@ -278,16 +363,20 @@ if (
 const model =
   provider === "google"
     ? googleProvider(process.env.GOOGLE_MODEL ?? "gemini-1.5-flash")
-    : provider === "qwen"
-      ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
-      : openaiProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
+    : provider === "lmstudio"
+      ? lmStudioProvider.chat(process.env.LM_STUDIO_MODEL ?? "local-model")
+      : provider === "qwen"
+        ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
+        : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
 
 // Main agent instance with tools and hooks.
 const agent = new Agent({
   name: "FinyxWaaSAgent",
   instructions,
   model,
-  // temperature: 0,
+  temperature: provider === "lmstudio" ? lmStudioTemperature ?? 0.7 : undefined,
+  maxOutputTokens:
+    provider === "lmstudio" ? lmStudioMaxOutputTokens : undefined,
   tools: [fetchWebsiteTool],
   memory,
   hooks: {
