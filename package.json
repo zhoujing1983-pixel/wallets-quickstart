@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "colima:start": "colima start",
+    "colima:start": "colima start --disk 40",
     "colima:stop": "colima stop",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
