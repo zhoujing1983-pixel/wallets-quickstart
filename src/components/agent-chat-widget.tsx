@@ -15,15 +15,20 @@ type AgentChatWidgetProps = {
   defaultOpen?: boolean;
 };
 
-const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+// 生成用于消息与会话的唯一 ID。
+const createId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+// 生成当前时间戳用于消息显示。
 const createTimestamp = () =>
   new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
+// 匹配 <think>...</think> 的思考片段。
 const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/gi;
 
+// 拆分思考内容与最终回答，供 UI 展示。
 const splitThinkContent = (content: string) => {
   THINK_TAG_REGEX.lastIndex = 0;
   const thinkChunks: string[] = [];
@@ -47,6 +52,7 @@ export function AgentChatWidget({
   variant = "floating",
   defaultOpen = false,
 }: AgentChatWidgetProps) {
+  // 根据渲染模式决定布局与初始化状态。
   const isPanel = variant === "panel";
   const [isOpen, setIsOpen] = useState(isPanel || defaultOpen);
   const [input, setInput] = useState("");
@@ -65,9 +71,14 @@ export function AgentChatWidget({
   const conversationIdRef = useRef<string>("");
   const assistantAvatar = "/agent/cat-avatar.jpg";
 
-  const canSend = useMemo(() => input.trim().length > 0 && !isSending, [input, isSending]);
+  // 判断是否允许发送消息。
+  const canSend = useMemo(
+    () => input.trim().length > 0 && !isSending,
+    [input, isSending]
+  );
 
   useEffect(() => {
+    // 初始化欢迎消息、用户与会话 ID，并恢复本地缓存聊天记录。
     const defaultMessage: ChatMessage = {
       id: "welcome",
       role: "assistant",
@@ -109,6 +120,7 @@ export function AgentChatWidget({
   }, []);
 
   useEffect(() => {
+    // 拉取后端配置，判断是否支持 think 模式并恢复本地设置。
     let mounted = true;
     const loadConfig = async () => {
       try {
@@ -119,7 +131,9 @@ export function AgentChatWidget({
           const supported = Boolean(data?.data?.supportsThink);
           setSupportsThink(supported);
           if (supported) {
-            const thinkMode = window.localStorage.getItem("finyx-agent-think-mode");
+            const thinkMode = window.localStorage.getItem(
+              "finyx-agent-think-mode"
+            );
             if (thinkMode === "on") {
               setUseThink(true);
             }
@@ -143,12 +157,14 @@ export function AgentChatWidget({
   }, []);
 
   useEffect(() => {
+    // 持久化聊天记录到本地存储。
     if (typeof window === "undefined") return;
     if (messages.length === 0) return;
     window.localStorage.setItem("finyx-agent-chat", JSON.stringify(messages));
   }, [messages]);
 
   useEffect(() => {
+    // 监听网络状态变化，更新在线状态提示。
     if (typeof window === "undefined") return;
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -162,10 +178,12 @@ export function AgentChatWidget({
   }, []);
 
   useEffect(() => {
+    // 新消息或面板打开时自动滚动到底部。
     if (!listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, isOpen]);
 
+  // 发送用户输入并追加机器人回复。
   const sendMessage = async () => {
     const prompt = input.trim();
     if (!prompt || isSending) return;
@@ -229,6 +247,7 @@ export function AgentChatWidget({
     }
   };
 
+  // 清空聊天记录并重置会话 ID。
   const handleClear = () => {
     const fresh: ChatMessage[] = [
       {
@@ -242,41 +261,55 @@ export function AgentChatWidget({
     if (typeof window !== "undefined") {
       window.localStorage.setItem("finyx-agent-chat", JSON.stringify(fresh));
       const nextConversationId = createId();
-      window.localStorage.setItem("finyx-agent-conversation-id", nextConversationId);
+      window.localStorage.setItem(
+        "finyx-agent-conversation-id",
+        nextConversationId
+      );
       conversationIdRef.current = nextConversationId;
     }
   };
 
+  // 打开关闭确认弹层。
   const handleCloseChat = () => {
     setIsCloseConfirmOpen(true);
   };
 
+  // 确认关闭后清空并收起聊天。
   const handleConfirmClose = () => {
     handleClear();
     setIsOpen(false);
     setIsCloseConfirmOpen(false);
   };
 
+  // 切换 RAG/LLM 模式并持久化设置。
   const toggleRagMode = () => {
     setUseLlmDirectly((prev) => {
       const next = !prev;
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("finyx-agent-rag-mode", next ? "llm" : "rag");
+        window.localStorage.setItem(
+          "finyx-agent-rag-mode",
+          next ? "llm" : "rag"
+        );
       }
       return next;
     });
   };
 
+  // 切换 think 展示并持久化设置。
   const toggleThinkMode = () => {
     setUseThink((prev) => {
       const next = !prev;
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("finyx-agent-think-mode", next ? "on" : "off");
+        window.localStorage.setItem(
+          "finyx-agent-think-mode",
+          next ? "on" : "off"
+        );
       }
       return next;
     });
   };
 
+  // 展开或收起某条消息的 think 面板。
   const toggleThinkPanel = (messageId: string) => {
     setExpandedThinks((prev) => ({
       ...prev,
@@ -284,6 +317,7 @@ export function AgentChatWidget({
     }));
   };
 
+  // Enter 发送，Shift+Enter 换行。
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -291,10 +325,12 @@ export function AgentChatWidget({
     }
   };
 
+  // 根据渲染模式选择容器样式。
   const containerClass = isPanel
     ? "relative flex h-full w-full flex-col font-[var(--font-geist-sans)]"
     : "fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 font-[var(--font-geist-sans)]";
 
+  // 根据渲染模式选择聊天壳样式。
   const chatShellClass = isPanel
     ? "relative flex h-full w-full flex-col rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_40px_rgba(15,23,42,0.12)] overflow-hidden"
     : "relative flex h-[600px] w-[380px] max-w-[92vw] flex-col rounded-[32px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.2)] overflow-hidden";
@@ -303,6 +339,7 @@ export function AgentChatWidget({
     <div className={containerClass}>
       {isOpen ? (
         <div className={chatShellClass}>
+          {/* 顶部栏与操作按钮 */}
           <div className="relative border-b border-slate-100 bg-gradient-to-b from-slate-50 via-white to-white px-5 pb-4 pt-4">
             {!isPanel ? (
               <div className="flex items-center justify-end gap-3">
@@ -325,6 +362,7 @@ export function AgentChatWidget({
               </div>
             ) : null}
           </div>
+          {/* 离线提示 */}
           {!isOnline ? (
             <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               You are offline. Messages will fail until the connection returns.
@@ -334,6 +372,7 @@ export function AgentChatWidget({
             ref={listRef}
             className="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-[#fafafa]"
           >
+            {/* 消息列表 */}
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -357,37 +396,49 @@ export function AgentChatWidget({
                 >
                   <div className="flex flex-col gap-1 whitespace-pre-wrap break-words">
                     {message.role === "assistant" ? (
-                      (() => {
-                        const { think, answer } = splitThinkContent(message.content);
-                        const showThink = useThink && Boolean(think);
-                        const isExpanded = Boolean(expandedThinks[message.id]);
-                        return (
-                          <>
-                            {showThink ? (
-                              <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleThinkPanel(message.id)}
-                                  className="h-5 w-5 rounded-full border border-slate-200 bg-slate-50 text-[12px] font-semibold text-slate-600"
-                                  aria-label="Toggle think details"
-                                >
-                                  {isExpanded ? "v" : ">"}
-                                </button>
-                                <span>Think</span>
-                              </div>
-                            ) : null}
-                            {showThink && isExpanded ? (
-                              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600 whitespace-pre-wrap">
-                                {think}
-                              </div>
-                            ) : null}
-                            <span>{answer}</span>
-                          </>
-                        );
-                      })()
+                      <>
+                        {/* 解析并展示 think/回答内容 */}
+                        {(() => {
+                          const { think, answer } = splitThinkContent(
+                            message.content
+                          );
+                          const showThink = useThink && Boolean(think);
+                          const isExpanded = Boolean(
+                            expandedThinks[message.id]
+                          );
+                          return (
+                            <>
+                              {/* think 模式开关与面板 */}
+                              {showThink ? (
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleThinkPanel(message.id)}
+                                    className="h-5 w-5 rounded-full border border-slate-200 bg-slate-50 text-[12px] font-semibold text-slate-600"
+                                    aria-label="Toggle think details"
+                                  >
+                                    {isExpanded ? "v" : ">"}
+                                  </button>
+                                  <span>Think</span>
+                                </div>
+                              ) : null}
+                              {showThink && isExpanded ? (
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600 whitespace-pre-wrap">
+                                  {think}
+                                </div>
+                              ) : null}
+                              <span>{answer}</span>
+                            </>
+                          );
+                        })()}
+                      </>
                     ) : (
-                      <span>{message.content}</span>
+                      <>
+                        {/* 用户消息内容 */}
+                        <span>{message.content}</span>
+                      </>
                     )}
+                    {/* 时间戳 */}
                     <span
                       className={`text-right text-[11px] ${
                         message.role === "user"
@@ -401,6 +452,7 @@ export function AgentChatWidget({
                 </div>
               </div>
             ))}
+            {/* 发送中的加载提示 */}
             {isSending ? (
               <div className="flex items-start gap-2">
                 <div
@@ -424,6 +476,7 @@ export function AgentChatWidget({
               </div>
             ) : null}
           </div>
+          {/* 输入区与底部操作 */}
           <div className="mt-auto border-t border-slate-100 bg-white px-4 py-4">
             <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-2 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.02)]">
               <button
@@ -450,6 +503,7 @@ export function AgentChatWidget({
                 <img src="/agent/send.svg" alt="Send" className="h-4 w-4" />
               </button>
             </div>
+            {/* 清空聊天与开关区域 */}
             <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
               <div className="flex items-center gap-3">
                 <button
@@ -475,6 +529,7 @@ export function AgentChatWidget({
                   </button>
                   <span className="text-[11px] text-slate-500">LLM</span>
                 </div>
+                {/* Think 模式开关 */}
                 {supportsThink ? (
                   <div className="flex items-center gap-2">
                     <button
@@ -499,6 +554,7 @@ export function AgentChatWidget({
               </span>
             </div>
           </div>
+          {/* 关闭确认弹层 */}
           {isCloseConfirmOpen && !isPanel ? (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-900/25 backdrop-blur-sm">
               <div className="relative w-[86%] rounded-[24px] bg-white px-6 pb-6 pt-10 shadow-[0_30px_70px_rgba(15,23,42,0.3)]">
@@ -528,6 +584,7 @@ export function AgentChatWidget({
           ) : null}
         </div>
       ) : null}
+      {/* 浮动打开按钮 */}
       {!isPanel ? (
         <button
           type="button"
