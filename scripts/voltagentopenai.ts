@@ -108,21 +108,33 @@ const stripNoThinkFromText = (text: string) =>
   text.replace(/\s*\/no_think\b/g, "").trim();
 
 const stripNoThinkFromValue = (value: unknown): unknown => {
-  if (typeof value === "string") {
-    return stripNoThinkFromText(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => stripNoThinkFromValue(item));
-  }
-  if (value && typeof value === "object") {
+  const seen = new WeakSet<object>();
+  const maxDepth = 50;
+  const walk = (node: unknown, depth: number): unknown => {
+    if (typeof node === "string") {
+      return stripNoThinkFromText(node);
+    }
+    if (!node || typeof node !== "object") {
+      return node;
+    }
+    if (seen.has(node)) {
+      return node;
+    }
+    if (depth > maxDepth) {
+      return node;
+    }
+    seen.add(node);
+    if (Array.isArray(node)) {
+      return node.map((item) => walk(item, depth + 1));
+    }
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+      Object.entries(node as Record<string, unknown>).map(([key, val]) => [
         key,
-        stripNoThinkFromValue(val),
+        walk(val, depth + 1),
       ])
     );
-  }
-  return value;
+  };
+  return walk(value, 0);
 };
 
 const wrapMemoryMethod = (name: string) => {
@@ -131,7 +143,7 @@ const wrapMemoryMethod = (name: string) => {
     return;
   }
   memoryAny[name] = async (...args: unknown[]) => {
-    const sanitizedArgs = args.map(stripNoThinkFromValue);
+    const sanitizedArgs = args.map((arg) => stripNoThinkFromValue(arg));
     console.log(`[memory:${name}]`, sanitizedArgs);
     try {
       const result = await original(...sanitizedArgs);
@@ -299,6 +311,29 @@ const appendNoThinkToBody = (body: string) => {
   }
 };
 
+const enableQwenThinking = (body: string) => {
+  try {
+    const payload = JSON.parse(body);
+    if (!payload || typeof payload !== "object") {
+      return body;
+    }
+    payload.enable_thinking = true;
+    if (payload.stream === true) {
+      if (!payload.stream_options || typeof payload.stream_options !== "object") {
+        payload.stream_options = {};
+      }
+      payload.stream_options.include_usage = true;
+    }
+    const budget = parseOptionalNumber(process.env.QWEN_THINKING_BUDGET);
+    if (budget !== undefined) {
+      payload.thinking_budget = budget;
+    }
+    return JSON.stringify(payload);
+  } catch {
+    return body;
+  }
+};
+
 const parseOptionalNumber = (value: string | undefined) => {
   if (!value) return undefined;
   const parsed = Number(value);
@@ -332,7 +367,9 @@ const qwenProvider = createOpenAI({
     process.env.QWEN_BASE_URL ??
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
   apiKey: process.env.QWEN_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "",
-  fetch: createLoggedFetch("qwen", rewriteDeveloperRole),
+  fetch: createLoggedFetch("qwen", (body) =>
+    enableQwenThinking(rewriteDeveloperRole(body))
+  ),
 });
 
 // Google provider using the AI SDK wrapper.
