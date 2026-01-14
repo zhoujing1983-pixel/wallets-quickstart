@@ -11,7 +11,8 @@ import { LibSQLMemoryAdapter } from "@voltagent/libsql";
 // Tool to fetch and sanitize website content for summaries.
 const fetchWebsiteTool = tool({
   name: "fetch_website_content",
-  description: "Fetch raw text content from a URL for summarization or analysis.",
+  description:
+    "Fetch raw text content from a URL for summarization or analysis.",
   parameters: z.object({
     url: z.string().url(),
     maxChars: z.number().int().positive().max(20000).optional(),
@@ -53,7 +54,9 @@ const fetchWebsiteTool = tool({
         if (attempt === maxRetries) {
           break;
         }
-        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        await new Promise((resolve) =>
+          setTimeout(resolve, 500 * (attempt + 1))
+        );
       } finally {
         clearTimeout(timeoutId);
       }
@@ -64,7 +67,9 @@ const fetchWebsiteTool = tool({
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Failed to fetch ${url}: ${response.status} ${response.statusText}`
+      );
     }
 
     // Content type for basic HTML stripping.
@@ -76,20 +81,18 @@ const fetchWebsiteTool = tool({
       status: response.status,
     });
     // Normalized text for the tool output.
-    const content =
-      contentType.includes("text/html")
-        ? rawText
-            .replace(/<script[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[\s\S]*?<\/style>/gi, " ")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
-        : rawText.trim();
+    const content = contentType.includes("text/html")
+      ? rawText
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+      : rawText.trim();
 
     return {
       url,
       content: content.slice(0, maxChars),
-     
     };
   },
 });
@@ -163,7 +166,7 @@ const redactSensitive = (value: unknown): unknown => {
           return [key, maskSecret(val)];
         }
         return [key, redactSensitive(val)];
-      },
+      }
     );
     return Object.fromEntries(entries);
   }
@@ -190,7 +193,12 @@ const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
   if (!init?.body) {
     return null;
   }
-  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+      ? input.toString()
+      : input.url;
   const safeUrl = redactUrl(url);
   if (typeof init.body === "string") {
     try {
@@ -204,7 +212,11 @@ const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 // Print a redacted LLM request payload to logs.
-const logLLMRequest = (label: string, input: RequestInfo | URL, init?: RequestInit) => {
+const logLLMRequest = (
+  label: string,
+  input: RequestInfo | URL,
+  init?: RequestInit
+) => {
   const entry = buildLogEntry(input, init);
   if (!entry) {
     return;
@@ -216,7 +228,7 @@ const logLLMRequest = (label: string, input: RequestInfo | URL, init?: RequestIn
 // Create a fetch wrapper that logs requests and optionally rewrites bodies.
 const createLoggedFetch = (
   label: string,
-  transformBody?: (body: string) => string,
+  transformBody?: (body: string) => string
 ): typeof fetch => {
   return async (input, init) => {
     if (init?.body && typeof init.body === "string" && transformBody) {
@@ -341,7 +353,9 @@ if (!instructions) {
 
 // Selected model provider from environment.
 const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
-const lmStudioTemperature = parseOptionalNumber(process.env.LM_STUDIO_TEMPERATURE);
+const lmStudioTemperature = parseOptionalNumber(
+  process.env.LM_STUDIO_TEMPERATURE
+);
 const lmStudioMaxTokens = parseOptionalNumber(process.env.LM_STUDIO_MAX_TOKENS);
 const lmStudioMaxOutputTokens =
   lmStudioMaxTokens !== undefined && lmStudioMaxTokens >= 1
@@ -364,10 +378,10 @@ const model =
   provider === "google"
     ? googleProvider(process.env.GOOGLE_MODEL ?? "gemini-1.5-flash")
     : provider === "lmstudio"
-      ? lmStudioProvider.chat(process.env.LM_STUDIO_MODEL ?? "local-model")
-      : provider === "qwen"
-        ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
-        : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
+    ? lmStudioProvider.chat(process.env.LM_STUDIO_MODEL ?? "local-model")
+    : provider === "qwen"
+    ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
+    : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
 
 // Main agent instance with tools and hooks.
 const agent = new Agent({
@@ -404,7 +418,9 @@ const isLocalDebug = process.argv.includes("--local");
 if (isLocalDebug) {
   // Readline interface for local prompt input.
   const rl = readline.createInterface({ input, output });
-  console.log("Local debug mode. Type your prompt and press Enter. Ctrl+C to exit.");
+  console.log(
+    "Local debug mode. Type your prompt and press Enter. Ctrl+C to exit."
+  );
   rl.on("line", async (line) => {
     // Trimmed user prompt from stdin.
     const prompt = line.trim();

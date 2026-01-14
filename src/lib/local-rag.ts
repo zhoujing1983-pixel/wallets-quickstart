@@ -212,17 +212,24 @@ const loadIngestDocs = async () => {
   return { docs, signature: computeSignature(files) };
 };
 
-// Resolve embedding config from env (Qwen OpenAI-compatible endpoint).
+// Resolve embedding config from env (OpenAI-compatible endpoints).
 const getEmbeddingConfig = () => {
+  const provider = (process.env.MODEL_PROVIDER ?? "qwen").toLowerCase();
   const apiKey =
     process.env.QWEN_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "";
+  const defaultBaseURL =
+    provider === "lmstudio"
+      ? process.env.LM_STUDIO_BASE_URL ?? "http://localhost:1234/v1"
+      : DEFAULT_BASE_URL;
   const baseURL =
     process.env.RAG_EMBEDDING_BASE_URL ??
-    process.env.QWEN_BASE_URL ??
-    DEFAULT_BASE_URL;
+    (provider === "lmstudio" ? undefined : process.env.QWEN_BASE_URL) ??
+    defaultBaseURL;
   const model =
     process.env.RAG_EMBEDDING_MODEL ??
-    process.env.QWEN_EMBEDDING_MODEL ??
+    (provider === "lmstudio"
+      ? process.env.LM_STUDIO_EMBEDDING_MODEL ?? process.env.LM_STUDIO_MODEL
+      : process.env.QWEN_EMBEDDING_MODEL) ??
     DEFAULT_EMBEDDING_MODEL;
   return { apiKey, baseURL, model };
 };
@@ -239,7 +246,7 @@ const embedTexts = async (texts: string[]) => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (apiKey) {
+  if (apiKey && !isLocalBase) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
   const res = await fetch(`${baseURL}/embeddings`, {
