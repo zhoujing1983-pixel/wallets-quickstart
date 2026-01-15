@@ -223,6 +223,51 @@ const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
   return { url: safeUrl, body: redactSensitive(init.body) };
 };
 
+const extractReasoningText = (output: unknown) => {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+  const record = output as Record<string, unknown>;
+  if (typeof record.reasoningText === "string") {
+    return record.reasoningText.trim();
+  }
+  if (typeof record.reasoning === "string") {
+    return record.reasoning.trim();
+  }
+  const provider = record.providerResponse as
+    | {
+        choices?: Array<{
+          message?: { reasoning_content?: unknown; reasoning?: unknown };
+        }>;
+      }
+    | undefined;
+  const reasoning =
+    provider?.choices?.[0]?.message?.reasoning_content ??
+    provider?.choices?.[0]?.message?.reasoning;
+  if (typeof reasoning === "string") {
+    return reasoning.trim();
+  }
+  return undefined;
+};
+
+let lastQwenReasoning: string | undefined;
+
+const logFinalOutput = (output: unknown) => {
+  if (!output || typeof output !== "object") {
+    return;
+  }
+  const reasoning = extractReasoningText(output);
+  const resolvedReasoning = reasoning ?? lastQwenReasoning;
+  if (resolvedReasoning) {
+    console.log("\n[reasoning]", resolvedReasoning);
+    lastQwenReasoning = undefined;
+  }
+  const text = (output as { text?: unknown }).text;
+  if (typeof text === "string") {
+    console.log("\n[final]", text);
+  }
+};
+
 // Print a redacted LLM request payload to logs.
 const logLLMRequest = (
   label: string,
@@ -237,10 +282,38 @@ const logLLMRequest = (
   console.dir(entry, { depth: null });
 };
 
+const logLLMResponse = async (label: string, response: Response) => {
+  try {
+    const cloned = response.clone();
+    const body = await cloned.json();
+    const reasoning =
+      body?.choices?.[0]?.message?.reasoning_content ??
+      body?.choices?.[0]?.message?.reasoning;
+    if (label === "qwen" && typeof reasoning === "string") {
+      lastQwenReasoning = reasoning.trim();
+    }
+    console.log(`\n[llm:response] ${label}`);
+    console.dir(
+      {
+        status: response.status,
+        usage: body?.usage,
+        reasoning:
+          typeof reasoning === "string" && reasoning.trim().length > 0
+            ? reasoning
+            : undefined,
+      },
+      { depth: null }
+    );
+  } catch {
+    // Ignore response logging failures.
+  }
+};
+
 // Create a fetch wrapper that logs requests and optionally rewrites bodies.
 const createLoggedFetch = (
   label: string,
-  transformBody?: (body: string) => string
+  transformBody?: (body: string) => string,
+  options?: { logResponse?: boolean }
 ): typeof fetch => {
   return async (input, init) => {
     if (init?.body && typeof init.body === "string" && transformBody) {
@@ -248,13 +321,21 @@ const createLoggedFetch = (
         const nextBody = transformBody(init.body);
         const nextInit = { ...init, body: nextBody };
         logLLMRequest(label, input, nextInit);
-        return fetch(input, nextInit);
+        const response = await fetch(input, nextInit);
+        if (options?.logResponse) {
+          await logLLMResponse(label, response);
+        }
+        return response;
       } catch {
         // Fall back to default logging below.
       }
     }
     logLLMRequest(label, input, init);
-    return fetch(input, init);
+    const response = await fetch(input, init);
+    if (options?.logResponse) {
+      await logLLMResponse(label, response);
+    }
+    return response;
   };
 };
 
@@ -271,6 +352,33 @@ const rewriteDeveloperRole = (body: string) => {
     return message;
   });
   return JSON.stringify(payload);
+};
+
+const injectQwenReasoningLanguage = (body: string) => {
+  try {
+    const payload = JSON.parse(body);
+    if (!Array.isArray(payload?.messages)) {
+      return body;
+    }
+    const instruction = process.env.QWEN_REASONING_INSTRUCTION?.trim();
+    if (!instruction) {
+      return body;
+    }
+    const firstMessage = payload.messages[0];
+    if (
+      firstMessage?.role === "system" &&
+      typeof firstMessage.content === "string"
+    ) {
+      if (!firstMessage.content.includes(instruction)) {
+        firstMessage.content = `${firstMessage.content}\n${instruction}`.trim();
+      }
+      return JSON.stringify(payload);
+    }
+    payload.messages.unshift({ role: "system", content: instruction });
+    return JSON.stringify(payload);
+  } catch {
+    return body;
+  }
 };
 
 const appendNoThinkToBody = (body: string) => {
@@ -319,7 +427,10 @@ const enableQwenThinking = (body: string) => {
     }
     payload.enable_thinking = true;
     if (payload.stream === true) {
-      if (!payload.stream_options || typeof payload.stream_options !== "object") {
+      if (
+        !payload.stream_options ||
+        typeof payload.stream_options !== "object"
+      ) {
         payload.stream_options = {};
       }
       payload.stream_options.include_usage = true;
@@ -367,8 +478,11 @@ const qwenProvider = createOpenAI({
     process.env.QWEN_BASE_URL ??
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
   apiKey: process.env.QWEN_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "",
-  fetch: createLoggedFetch("qwen", (body) =>
-    enableQwenThinking(rewriteDeveloperRole(body))
+  fetch: createLoggedFetch(
+    "qwen",
+    (body) =>
+      enableQwenThinking(injectQwenReasoningLanguage(rewriteDeveloperRole(body))),
+    { logResponse: true }
   ),
 });
 
@@ -441,10 +555,8 @@ const agent = new Agent({
       }
       console.log("\n[tool:end]", tool.name, output);
     },
-    onStepFinish: ({ step }) => {
-      if (step?.type === "text" && step?.role === "assistant") {
-        console.log("\n[llm]", step.content);
-      }
+    onEnd: ({ output }) => {
+      logFinalOutput(output);
     },
   },
 });
@@ -464,9 +576,7 @@ if (isLocalDebug) {
     if (!prompt) {
       return;
     }
-    // LLM output for the prompt.
-    const result = await agent.generateText(prompt);
-    console.log("\n[final]", result.text);
+    await agent.generateText(prompt);
     rl.prompt();
   });
   rl.prompt();
@@ -478,4 +588,14 @@ if (isLocalDebug) {
       enableSwaggerUI: true,
     }),
   });
+  const serverPrompt = process.env.VOLTAGENT_SERVER_PROMPT?.trim();
+  if (serverPrompt) {
+    void (async () => {
+      try {
+        await agent.generateText(serverPrompt);
+      } catch (error) {
+        console.error("[server:prompt] failed", error);
+      }
+    })();
+  }
 }
