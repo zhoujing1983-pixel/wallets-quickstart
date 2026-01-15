@@ -1,4 +1,10 @@
-import { Agent, Memory, VoltAgent, tool } from "@voltagent/core";
+import {
+  Agent,
+  Memory,
+  VoltAgent,
+  tool,
+  createOutputGuardrail,
+} from "@voltagent/core";
 import { honoServer } from "@voltagent/server-hono";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -7,6 +13,14 @@ import readline from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import "dotenv/config";
 import { LibSQLMemoryAdapter } from "@voltagent/libsql";
+import { resumeToPipeableStream } from "react-dom/server";
+import type {
+  TextUIPart,
+  UIDataTypes,
+  UIMessage,
+  UIMessagePart,
+  UITools,
+} from "ai";
 
 // Tool to fetch and sanitize website content for summaries.
 const fetchWebsiteTool = tool({
@@ -234,23 +248,228 @@ const extractReasoningText = (output: unknown) => {
   if (typeof record.reasoning === "string") {
     return record.reasoning.trim();
   }
-  const provider = record.providerResponse as
+
+  const normalizeMessage = (
+    message: Record<string, unknown> | undefined
+  ): string | undefined => {
+    if (!message) {
+      return undefined;
+    }
+    const reasoningContent = message.reasoning_content;
+    if (typeof reasoningContent === "string" && reasoningContent.trim()) {
+      return reasoningContent.trim();
+    }
+    const reasoningField = message.reasoning;
+    if (typeof reasoningField === "string" && reasoningField.trim()) {
+      return reasoningField.trim();
+    }
+    return undefined;
+  };
+
+  const providerResponse = record.providerResponse as
     | {
-        choices?: Array<{
-          message?: { reasoning_content?: unknown; reasoning?: unknown };
-        }>;
+        choices?: Array<{ message?: Record<string, unknown> }>;
+        body?: {
+          choices?: Array<{ message?: Record<string, unknown> }>;
+          messages?: Array<Record<string, unknown>>;
+        };
+        messages?: Array<Record<string, unknown>>;
       }
     | undefined;
-  const reasoning =
-    provider?.choices?.[0]?.message?.reasoning_content ??
-    provider?.choices?.[0]?.message?.reasoning;
-  if (typeof reasoning === "string") {
-    return reasoning.trim();
+  const choices =
+    providerResponse?.choices ?? providerResponse?.body?.choices ?? undefined;
+  if (choices) {
+    for (const choice of choices) {
+      const reasoning = normalizeMessage(choice?.message);
+      if (reasoning) {
+        return reasoning;
+      }
+    }
   }
+
+  const messages =
+    providerResponse?.messages ?? providerResponse?.body?.messages ?? undefined;
+  if (messages) {
+    for (const message of messages) {
+      const reasoning = normalizeMessage(message);
+      if (reasoning) {
+        return reasoning;
+      }
+    }
+  }
+
   return undefined;
 };
 
 let lastQwenReasoning: string | undefined;
+
+const wrapTextWithReason = (reasoning: string, text?: string) => {
+  const trimmedReasoning = reasoning.trim();
+  if (!trimmedReasoning) {
+    return text ?? "";
+  }
+  const reasonBlock = `<reason>${trimmedReasoning}</reason>`;
+  if (!text) {
+    return reasonBlock;
+  }
+  return `${reasonBlock}\n${text}`;
+};
+
+const normalizeReasonFromMessage = (
+  message: Record<string, unknown> | undefined
+): string | undefined => {
+  if (!message) {
+    return undefined;
+  }
+  const reasoningContent = message.reasoning_content;
+  if (typeof reasoningContent === "string" && reasoningContent.trim()) {
+    return reasoningContent.trim();
+  }
+  const reasoningField = message.reasoning;
+  if (typeof reasoningField === "string" && reasoningField.trim()) {
+    return reasoningField.trim();
+  }
+  return undefined;
+};
+
+const extractReasoningFromProviderResponse = (response: unknown) => {
+  if (!response || typeof response !== "object") {
+    return undefined;
+  }
+  const record = response as {
+    choices?: Array<{ message?: Record<string, unknown> }>;
+    messages?: Array<Record<string, unknown>>;
+    body?: {
+      choices?: Array<{ message?: Record<string, unknown> }>;
+      messages?: Array<Record<string, unknown>>;
+    };
+  };
+  const choices = record.choices ?? record.body?.choices;
+  if (choices) {
+    for (const choice of choices) {
+      const reasoning = normalizeReasonFromMessage(choice?.message);
+      if (reasoning) {
+        return reasoning;
+      }
+    }
+  }
+  const messages = record.messages ?? record.body?.messages;
+  if (messages) {
+    for (const message of messages) {
+      const reasoning = normalizeReasonFromMessage(message);
+      if (reasoning) {
+        return reasoning;
+      }
+    }
+  }
+  return undefined;
+};
+
+const REASONING_CONTEXT_KEY = Symbol("voltagent:reasoning");
+
+const parseBooleanEnv = (value: string | undefined) => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["0", "false", "no"].includes(normalized)) {
+    return false;
+  }
+  if (["1", "true", "yes"].includes(normalized)) {
+    return true;
+  }
+  return undefined;
+};
+
+const shouldStoreReasoningInMemory =
+  parseBooleanEnv(process.env.VOLTAGENT_SAVE_REASONING_TO_MEMORY) ?? false;
+
+const isTextPart = (
+  part?: UIMessagePart<UIDataTypes, UITools>
+): part is TextUIPart => Boolean(part && part.type === "text");
+
+const hasReasonPart = (parts?: UIMessage["parts"]) =>
+  Boolean(
+    parts?.some((part) => isTextPart(part) && part.text.includes("<reason>"))
+  );
+
+const withReasonMessage = (
+  message: UIMessage,
+  reasoning: string
+): UIMessage => {
+  const trimmed = reasoning.trim();
+  if (!trimmed) {
+    return message;
+  }
+  const existingParts = message.parts?.map((part) => ({ ...part })) ?? [];
+  if (hasReasonPart(existingParts)) {
+    return message;
+  }
+  const reasonPart: TextUIPart = {
+    type: "text",
+    text: `<reason>${trimmed}</reason>`,
+  };
+  return {
+    ...message,
+    parts: [reasonPart, ...existingParts],
+  };
+};
+
+type SaveMessageWithContextArgs = Parameters<
+  typeof memory.saveMessageWithContext
+>;
+
+const originalSaveMessageWithContext =
+  memory.saveMessageWithContext.bind(memory);
+memory.saveMessageWithContext = async function (
+  message: SaveMessageWithContextArgs[0],
+  userId: SaveMessageWithContextArgs[1],
+  conversationId: SaveMessageWithContextArgs[2],
+  context: SaveMessageWithContextArgs[3],
+  operationContext: SaveMessageWithContextArgs[4]
+) {
+  const reasoning = operationContext?.context?.get(REASONING_CONTEXT_KEY);
+  const shouldInjectReasoning =
+    shouldStoreReasoningInMemory &&
+    message.role === "assistant" &&
+    typeof reasoning === "string" &&
+    reasoning.trim();
+  const nextMessage = shouldInjectReasoning
+    ? withReasonMessage(message, reasoning)
+    : message;
+  return originalSaveMessageWithContext(
+    nextMessage,
+    userId,
+    conversationId,
+    context,
+    operationContext
+  );
+};
+
+const reasoningInjectionGuardrail = createOutputGuardrail({
+  id: "reasoning-injector",
+  name: "Inject reasoning when available",
+  handler: ({ outputText, context: oc }) => {
+    if (typeof outputText !== "string") {
+      return { pass: true };
+    }
+    const reasoning = oc.context.get(REASONING_CONTEXT_KEY);
+    if (typeof reasoning !== "string" || !reasoning.trim()) {
+      return { pass: true };
+    }
+    if (outputText.includes("<reason>")) {
+      oc.context.delete(REASONING_CONTEXT_KEY);
+      return { pass: true };
+    }
+    oc.context.delete(REASONING_CONTEXT_KEY);
+    const modifiedOutput = wrapTextWithReason(reasoning, outputText);
+    return {
+      pass: true,
+      action: "modify",
+      modifiedOutput,
+    };
+  },
+});
 
 const logFinalOutput = (output: unknown) => {
   if (!output || typeof output !== "object") {
@@ -259,7 +478,7 @@ const logFinalOutput = (output: unknown) => {
   const reasoning = extractReasoningText(output);
   const resolvedReasoning = reasoning ?? lastQwenReasoning;
   if (resolvedReasoning) {
-    console.log("\n[reasoning]", resolvedReasoning);
+    console.log("\n[final reasoning]", resolvedReasoning);
     lastQwenReasoning = undefined;
   }
   const text = (output as { text?: unknown }).text;
@@ -598,6 +817,7 @@ const agent = new Agent({
     provider === "lmstudio" ? lmStudioMaxOutputTokens : undefined,
   tools: [fetchWebsiteTool],
   memory,
+  outputGuardrails: [reasoningInjectionGuardrail],
   hooks: {
     onToolStart: ({ tool, args }) => {
       console.log("\n[tool:start]", tool.name, args);
@@ -609,7 +829,20 @@ const agent = new Agent({
       }
       console.log("\n[tool:end]", tool.name, output);
     },
+    onStepFinish: ({ step, context: oc }) => {
+      try {
+        const reasoning =
+          extractReasoningFromProviderResponse(step?.response) ??
+          extractReasoningFromProviderResponse(step?.result?.response);
+        if (reasoning) {
+          oc.context.set(REASONING_CONTEXT_KEY, reasoning);
+        }
+      } catch (error) {
+        console.error("[hook:onStepFinish] failed to capture reasoning", error);
+      }
+    },
     onEnd: ({ output }) => {
+      console.log("\n[agent:hook-output]", output);
       logFinalOutput(output);
     },
   },

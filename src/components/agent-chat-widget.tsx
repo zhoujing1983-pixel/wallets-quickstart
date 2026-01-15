@@ -25,8 +25,8 @@ const createTimestamp = () =>
     minute: "2-digit",
     second: "2-digit",
   });
-// 匹配 <think>...</think> 的思考片段。
-const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/gi;
+// 匹配 <think>/<reason> 内容块。
+const THINK_TAG_REGEX = /<(?:think|reason)>([\s\S]*?)<\/(?:think|reason)>/gi;
 
 // 拆分思考内容与最终回答，供 UI 展示。
 const splitThinkContent = (content: string) => {
