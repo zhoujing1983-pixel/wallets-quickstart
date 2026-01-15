@@ -22,7 +22,11 @@ const resolveThinkModels = () =>
 
 export async function GET() {
   const model = resolveCurrentModel();
+  const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
   const thinkModels = resolveThinkModels();
   const supportsThink = model.length > 0 && thinkModels.includes(model);
-  return NextResponse.json({ success: true, data: { model, supportsThink } });
+  return NextResponse.json({
+    success: true,
+    data: { model, provider, supportsThink },
+  });
 }

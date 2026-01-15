@@ -63,6 +63,7 @@ export function AgentChatWidget({
   const [useLlmDirectly, setUseLlmDirectly] = useState(false);
   const [useThink, setUseThink] = useState(false);
   const [supportsThink, setSupportsThink] = useState(false);
+  const [provider, setProvider] = useState("ollama");
   const [expandedThinks, setExpandedThinks] = useState<Record<string, boolean>>(
     {}
   );
@@ -129,6 +130,11 @@ export function AgentChatWidget({
         if (!mounted) return;
         if (res.ok && data?.success) {
           const supported = Boolean(data?.data?.supportsThink);
+          const nextProvider =
+            typeof data?.data?.provider === "string"
+              ? data.data.provider
+              : "ollama";
+          setProvider(nextProvider);
           setSupportsThink(supported);
           if (supported) {
             const thinkMode = window.localStorage.getItem(
@@ -188,7 +194,10 @@ export function AgentChatWidget({
     const prompt = input.trim();
     if (!prompt || isSending) return;
     const requestPrompt =
-      supportsThink && !useThink && !prompt.includes("/no_think")
+      provider === "lmstudio" &&
+      supportsThink &&
+      !useThink &&
+      !prompt.includes("/no_think")
         ? `${prompt} /no_think`
         : prompt;
     setInput("");
@@ -210,6 +219,7 @@ export function AgentChatWidget({
             userId: userIdRef.current,
             conversationId: conversationIdRef.current,
             ragMode: useLlmDirectly ? "llm" : "rag",
+            enableThinking: provider === "qwen" ? useThink : undefined,
           },
         }),
       });

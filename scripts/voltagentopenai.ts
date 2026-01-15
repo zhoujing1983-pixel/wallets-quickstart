@@ -309,16 +309,60 @@ const logLLMResponse = async (label: string, response: Response) => {
   }
 };
 
+const readHeaderValue = (
+  headers: HeadersInit | undefined,
+  name: string
+): string | undefined => {
+  if (!headers) {
+    return undefined;
+  }
+  const target = name.toLowerCase();
+  if (headers instanceof Headers) {
+    return headers.get(name) ?? headers.get(target) ?? undefined;
+  }
+  if (Array.isArray(headers)) {
+    for (const [key, value] of headers) {
+      if (key.toLowerCase() === target) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+  const record = headers as Record<string, string | string[]>;
+  const direct = record[name] ?? record[target];
+  if (Array.isArray(direct)) {
+    return direct[0];
+  }
+  return direct;
+};
+
+const parseEnableThinkingHeader = (
+  headers: HeadersInit | undefined
+): boolean | undefined => {
+  const raw = readHeaderValue(headers, "x-qwen-enable-thinking");
+  if (!raw) {
+    return undefined;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return undefined;
+};
+
 // Create a fetch wrapper that logs requests and optionally rewrites bodies.
 const createLoggedFetch = (
   label: string,
-  transformBody?: (body: string) => string,
+  transformBody?: (body: string, init?: RequestInit) => string,
   options?: { logResponse?: boolean }
 ): typeof fetch => {
   return async (input, init) => {
     if (init?.body && typeof init.body === "string" && transformBody) {
       try {
-        const nextBody = transformBody(init.body);
+        const nextBody = transformBody(init.body, init);
         const nextInit = { ...init, body: nextBody };
         logLLMRequest(label, input, nextInit);
         const response = await fetch(input, nextInit);
@@ -419,13 +463,18 @@ const appendNoThinkToBody = (body: string) => {
   }
 };
 
-const enableQwenThinking = (body: string) => {
+const enableQwenThinking = (body: string, enableThinking?: boolean) => {
   try {
     const payload = JSON.parse(body);
     if (!payload || typeof payload !== "object") {
       return body;
     }
-    payload.enable_thinking = true;
+    if (typeof payload.enable_thinking !== "boolean") {
+      if (typeof enableThinking !== "boolean") {
+        return body;
+      }
+      payload.enable_thinking = enableThinking;
+    }
     if (payload.stream === true) {
       if (
         !payload.stream_options ||
@@ -480,8 +529,13 @@ const qwenProvider = createOpenAI({
   apiKey: process.env.QWEN_API_KEY ?? process.env.DASHSCOPE_API_KEY ?? "",
   fetch: createLoggedFetch(
     "qwen",
-    (body) =>
-      enableQwenThinking(injectQwenReasoningLanguage(rewriteDeveloperRole(body))),
+    (body, init) => {
+      const enableThinking = parseEnableThinkingHeader(init?.headers);
+      return enableQwenThinking(
+        injectQwenReasoningLanguage(rewriteDeveloperRole(body)),
+        enableThinking
+      );
+    },
     { logResponse: true }
   ),
 });

@@ -17,6 +17,15 @@ export async function POST(request: Request) {
     const options =
       body?.options && typeof body.options === "object" ? body.options : undefined;
     const ragMode = options?.ragMode === "llm" ? "llm" : "rag";
+    const enableThinking =
+      typeof options?.enableThinking === "boolean"
+        ? options.enableThinking
+        : undefined;
+    const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
+    const enableThinkingHeader =
+      provider === "qwen" && enableThinking !== undefined
+        ? { "x-qwen-enable-thinking": String(enableThinking) }
+        : undefined;
     if (ragMode === "rag" && (mode === "local-rag" || mode === "hybrid")) {
       const data = await queryLocalRag(input);
       const threshold = Number(process.env.RAG_DISTANCE_THRESHOLD ?? 0.35);
@@ -30,12 +39,33 @@ export async function POST(request: Request) {
       }
     }
     const agentId = "FinyxWaaSAgent";
+    const agentRequestBody = {
+      input,
+      ...(options
+        ? {
+            options: {
+              ...options,
+              ...(enableThinkingHeader
+                ? {
+                    headers: {
+                      ...(options?.headers &&
+                      typeof options.headers === "object"
+                        ? options.headers
+                        : {}),
+                      ...enableThinkingHeader,
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
+    };
     const res = await fetch(
       `http://localhost:3141/agents/${encodeURIComponent(agentId)}/text`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(options ? { input, options } : { input }),
+        body: JSON.stringify(agentRequestBody),
       }
     );
     const data = await res.json();
