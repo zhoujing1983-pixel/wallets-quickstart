@@ -384,6 +384,27 @@ const parseBooleanEnv = (value: string | undefined) => {
 const shouldStoreReasoningInMemory =
   parseBooleanEnv(process.env.VOLTAGENT_SAVE_REASONING_TO_MEMORY) ?? false;
 
+const THINK_TAG_REGEX =
+  /<\s*(?:think|reason)[^>]*>[\s\S]*?<\/\s*(?:think|reason)\s*>/gi;
+const stripThinkTags = (text: string) =>
+  text.replace(THINK_TAG_REGEX, "").trim();
+
+const sanitizeMessageForMemory = (message: UIMessage): UIMessage => {
+  const sanitizedParts = message.parts
+    ?.map((part) => {
+      if (isTextPart(part)) {
+        const cleaned = stripThinkTags(part.text);
+        return { ...part, text: cleaned };
+      }
+      return { ...part };
+    })
+    .filter((part) => !(isTextPart(part) && !part.text));
+  if (sanitizedParts && sanitizedParts.length > 0) {
+    return { ...message, parts: sanitizedParts };
+  }
+  return message;
+};
+
 const isTextPart = (
   part?: UIMessagePart<UIDataTypes, UITools>
 ): part is TextUIPart => Boolean(part && part.type === "text");
@@ -437,8 +458,11 @@ memory.saveMessageWithContext = async function (
   const nextMessage = shouldInjectReasoning
     ? withReasonMessage(message, reasoning)
     : message;
+  const messageToStore = shouldStoreReasoningInMemory
+    ? nextMessage
+    : sanitizeMessageForMemory(nextMessage);
   return originalSaveMessageWithContext(
-    nextMessage,
+    messageToStore,
     userId,
     conversationId,
     context,
