@@ -412,10 +412,8 @@ export function AgentChatWidget({
                           const { think, answer } = splitThinkContent(
                             message.content
                           );
-                          const showThink = useThink && Boolean(think);
-                          const isExpanded = Boolean(
-                            expandedThinks[message.id]
-                          );
+                          const showThink = Boolean(think);
+                          const isExpanded = expandedThinks[message.id] ?? false;
                           return (
                             <>
                               {/* think 模式开关与面板 */}

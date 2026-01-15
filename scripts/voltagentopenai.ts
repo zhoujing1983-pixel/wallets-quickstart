@@ -405,6 +405,24 @@ const sanitizeMessageForMemory = (message: UIMessage): UIMessage => {
   return message;
 };
 
+const sanitizeMessageForQwen = (message: UIMessage): UIMessage => {
+  const sanitizedParts =
+    message.parts?.map((part) => {
+      if (isTextPart(part)) {
+        const cleaned = stripThinkTags(part.text);
+        return { ...part, text: cleaned };
+      }
+      return { ...part };
+    }) ?? [];
+  const filteredParts = sanitizedParts.filter(
+    (part) => !(isTextPart(part) && !part.text)
+  );
+  return {
+    ...message,
+    parts: filteredParts,
+  };
+};
+
 const isTextPart = (
   part?: UIMessagePart<UIDataTypes, UITools>
 ): part is TextUIPart => Boolean(part && part.type === "text");
@@ -843,6 +861,15 @@ const agent = new Agent({
   memory,
   outputGuardrails: [reasoningInjectionGuardrail],
   hooks: {
+    onPrepareMessages: (args) => {
+      if (provider !== "qwen") {
+        return { messages: args.messages };
+      }
+      const sanitizedMessages = args.messages.map((message) =>
+        sanitizeMessageForQwen(message)
+      );
+      return { messages: sanitizedMessages };
+    },
     onToolStart: ({ tool, args }) => {
       console.log("\n[tool:start]", tool.name, args);
     },
