@@ -95,6 +95,7 @@ The chat widget can answer simple questions locally without VoltAgent by using a
 - Default mode: `AGENT_PROXY_MODE=local-rag` (built-in).
 - Hybrid mode: `AGENT_PROXY_MODE=hybrid` uses local RAG first, then falls back to VoltAgent when distance is above `RAG_DISTANCE_THRESHOLD`.
 - VoltAgent mode: `AGENT_PROXY_MODE=voltagent` to proxy requests to `http://localhost:3141`.
+- Tool call policy / 工具调用策略：`AGENT_TOOL_CALL_POLICY=auto` 控制是否允许 LLM 调用工具（`auto`, `off`, `rag-only`）。
 - Ingest directory: set `RAG_INGEST_DIR` to point at a folder of docs (defaults to `./rag-docs`, supports md/txt/code/pdf/docx/xlsx).
 - Embeddings: `RAG_EMBEDDING_MODEL` uses the Qwen OpenAI-compatible embeddings endpoint (`QWEN_BASE_URL`, `QWEN_API_KEY`).
 - Reindex: set `RAG_FORCE_REINDEX=true` to rebuild embeddings after content changes.
