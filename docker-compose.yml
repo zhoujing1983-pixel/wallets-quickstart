@@ -21,7 +21,8 @@ services:
       - rabbitmq-data:/var/lib/rabbitmq
 
   postgres:
-    image: postgres:18-alpine
+    # image: postgres:18-alpine
+    image: ankane/pgvector:latest
     container_name: finyx-postgres
     ports:
       - "5432:5432"

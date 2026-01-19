@@ -1,12 +1,13 @@
 import path from "path";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import Database from "better-sqlite3";
-import { load as loadSqliteVec } from "sqlite-vec";
 import { encode, decode } from "gpt-tokenizer";
 import { parseExcel } from "@/lib/ingest/parse-excel";
 import { parseWord } from "@/lib/ingest/parse-word";
 import { parsePdf } from "@/lib/ingest/parse-pdf";
+import type { VectorRecord, VectorStore } from "./vector-store";
+import { SqliteVectorStore } from "./sqlite-vector-store";
+import { PgVectorStore } from "./pg-vector-store";
 
 // 采集到的原始文档（尚未切分）。
 type RagDoc = {
@@ -15,13 +16,10 @@ type RagDoc = {
   url?: string;
 };
 
-// 向量检索结果（已切分后的片段）。
-type RagMatch = {
-  id: number;
+// 统一向量存储的元数据结构（用于展示与引用）。
+type RagMetadata = {
   title: string;
-  content: string;
   url?: string;
-  distance: number;
 };
 
 /*
@@ -29,7 +27,7 @@ type RagMatch = {
  * - DEFAULT_INGEST_DIR: 默认从项目根目录的 rag-docs 读取文档。
  * - DEFAULT_EMBEDDING_MODEL: 默认使用的 embedding 模型名。
  * - DEFAULT_BASE_URL: 默认的 OpenAI-compatible embedding 服务地址（Qwen DashScope）。
- * - DEFAULT_DB_PATH: 本地 SQLite 向量库文件路径。
+ * - DEFAULT_VECTOR_BACKEND: 默认向量后端（sqlite | pg）。
  * - DEFAULT_CHUNK_TOKENS: 单个 chunk 的最大 token 数，影响召回粒度。
  * - DEFAULT_CHUNK_OVERLAP: chunk 之间重叠的 token 数，避免语义被切断。
  * - DEFAULT_TOP_K: 检索时返回的候选数量上限。
@@ -41,7 +39,7 @@ type RagMatch = {
 const DEFAULT_INGEST_DIR = path.join(process.cwd(), "rag-docs");
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-v3";
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_DB_PATH = path.join(process.cwd(), "local-rag-vec.db");
+const DEFAULT_VECTOR_BACKEND = "sqlite";
 const DEFAULT_CHUNK_TOKENS = 400;
 const DEFAULT_CHUNK_OVERLAP = 60;
 const DEFAULT_TOP_K = 4;
@@ -70,6 +68,13 @@ const DEFAULT_EXCLUDES = [
   "coverage",
   "public",
 ];
+
+/*
+ * 向量存储后端配置说明：
+ * - RAG_VECTOR_BACKEND: sqlite | pg（默认 sqlite）；
+ * - PGVECTOR_URL / DATABASE_URL: 当 backend=pg 时使用的连接串；
+ * - LOCAL_RAG_DB_PATH: sqlite 后端数据库路径（保持兼容）。
+ */
 
 /*
  * 将片段裁剪到可读长度，避免响应过长：
@@ -152,6 +157,21 @@ const chunkByTokens = (text: string, chunkSize: number, overlap: number) => {
     if (chunk) chunks.push(chunk);
   }
   return chunks;
+};
+
+/*
+ * 生成稳定的 chunk ID：
+ * - 使用文档来源 + chunk 序号计算哈希；
+ * - 便于后续替换/增量更新；
+ * - 避免路径或标题包含特殊字符导致存储异常。
+ */
+const buildChunkId = (doc: RagDoc, index: number) => {
+  const base = doc.url ?? doc.title;
+  return crypto
+    .createHash("sha256")
+    .update(base)
+    .update(`::${index}`)
+    .digest("hex");
 };
 
 /*
@@ -331,86 +351,69 @@ const embedTexts = async (texts: string[]) => {
   return data.data.map((item) => item.embedding);
 };
 
-// 复用单例数据库连接，避免重复打开文件。
-let dbInstance: Database.Database | null = null;
+// 向量存储单例（根据配置选择 sqlite 或 pg）。
+let vectorStoreInstance: VectorStore<RagMetadata> | null = null;
+// 记录当前使用的后端类型，避免重复创建。
+let vectorStoreBackend: string | null = null;
 // 避免并发建库，保证索引流程只有一个在跑。
 let indexPromise: Promise<void> | null = null;
 
 /*
- * 打开 SQLite，并初始化表结构：
- * - rag_meta 存储签名、维度等元信息；
- * - rag_docs 存储文本内容；
- * - rag_vectors 存储向量（由 sqlite-vec 提供）。
+ * 根据环境变量创建向量存储实例：
+ * - RAG_VECTOR_BACKEND=sqlite|pg；
+ * - 默认 sqlite，适合本地与轻量场景。
  */
-const getDb = () => {
-  if (dbInstance) return dbInstance;
-  const dbPath = process.env.LOCAL_RAG_DB_PATH
-    ? path.resolve(process.env.LOCAL_RAG_DB_PATH)
-    : DEFAULT_DB_PATH;
-  const db = new Database(dbPath);
-  loadSqliteVec(db);
-  // 存储 ingest 签名与 embedding 维度等元信息。
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rag_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
-  /*
-   * 文本与向量分表存储，向量表保持轻量：
-   * - id 是自增主键，用于与 rag_vectors.rowid 对齐；
-   * - title/content/url 保存可读文本与来源。
-   */
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rag_docs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      content TEXT NOT NULL,
-      url TEXT
-    );
-  `);
-  dbInstance = db;
-  return db;
-};
-
-// 读取单条元数据。
-const getMeta = (db: Database.Database, key: string) => {
-  const row = db
-    .prepare("SELECT value FROM rag_meta WHERE key = ?")
-    .get(key) as { value: string } | undefined;
-  return row?.value ?? null;
-};
-
-// 写入/更新元数据。
-const setMeta = (db: Database.Database, key: string, value: string) => {
-  db.prepare(
-    "INSERT INTO rag_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(key, value);
+const createVectorStore = () => {
+  const backend = (process.env.RAG_VECTOR_BACKEND ?? DEFAULT_VECTOR_BACKEND)
+    .trim()
+    .toLowerCase();
+  if (backend === "pg" || backend === "postgres" || backend === "postgresql") {
+    return { backend, store: new PgVectorStore() };
+  }
+  return { backend: "sqlite", store: new SqliteVectorStore() };
 };
 
 /*
- * 确保 vec0 表维度一致：
- * - 若维度变化，必须删除旧表并重建；
- * - 旧索引无法复用，因为向量维度变了；
- * - 维度一致则仅确保表存在即可。
+ * 获取向量存储实例（惰性初始化）：
+ * - 仅在首次使用时创建；
+ * - 允许通过环境变量切换后端；
+ * - init 在此统一调用。
  */
-const ensureVectorTable = (db: Database.Database, dimension: number) => {
-  const storedDim = getMeta(db, "embedding_dim");
-  if (!storedDim || Number(storedDim) !== dimension) {
-    // 维度变化时先删除旧向量表，避免混用不同维度的数据。
-    db.exec("DROP TABLE IF EXISTS rag_vectors;");
-    // vec0 虚拟表需要明确向量维度。
-    db.exec(
-      `CREATE VIRTUAL TABLE rag_vectors USING vec0(embedding float[${dimension}])`
-    );
-    // 记录新的维度，供下次校验。
-    setMeta(db, "embedding_dim", String(dimension));
-  } else {
-    // 维度一致时只需确保表存在。
-    db.exec(
-      `CREATE VIRTUAL TABLE IF NOT EXISTS rag_vectors USING vec0(embedding float[${dimension}])`
-    );
+const getVectorStore = async () => {
+  const { backend, store } = createVectorStore();
+  if (vectorStoreInstance && vectorStoreBackend === backend) {
+    return vectorStoreInstance;
   }
+  vectorStoreInstance = store;
+  vectorStoreBackend = backend;
+  await vectorStoreInstance.init();
+  return vectorStoreInstance;
+};
+
+/*
+ * 读取索引元数据：
+ * - 使用 VectorStore 的可选 meta API；
+ * - 若后端未实现则返回 null。
+ */
+const getMeta = async (store: VectorStore<RagMetadata>, key: string) => {
+  if (!store.getMeta) return null;
+  return store.getMeta(key);
+};
+
+/*
+ * 写入索引元数据：
+ * - 用于记录签名与索引数量；
+ * - 若后端未实现则抛出错误。
+ */
+const setMeta = async (
+  store: VectorStore<RagMetadata>,
+  key: string,
+  value: string
+) => {
+  if (!store.setMeta) {
+    throw new Error("VectorStore does not support setMeta.");
+  }
+  await store.setMeta(key, value);
 };
 
 /*
@@ -423,9 +426,9 @@ const ensureVectorTable = (db: Database.Database, dimension: number) => {
  * - 更新签名与计数。
  */
 const indexDocuments = async () => {
-  const db = getDb();
+  const store = await getVectorStore();
   const { docs, signature } = await loadIngestDocs();
-  const currentSignature = getMeta(db, "ingest_signature");
+  const currentSignature = await getMeta(store, "ingest_signature");
   const force = (process.env.RAG_FORCE_REINDEX ?? "").toLowerCase() === "true";
   if (!force && currentSignature === signature) {
     // 文档未变化且未强制重建，直接复用已有索引。
@@ -443,7 +446,12 @@ const indexDocuments = async () => {
    * - 再按 token 数切成固定大小 chunk；
    * - 每个 chunk 作为独立索引单元。
    */
-  const chunks: RagDoc[] = [];
+  const chunks: Array<{
+    id: string;
+    title: string;
+    content: string;
+    url?: string;
+  }> = [];
   for (const doc of docs) {
     const sections = splitMarkdown(doc.content);
     const slices: string[] = [];
@@ -452,7 +460,9 @@ const indexDocuments = async () => {
     }
     if (slices.length === 0) continue;
     for (let i = 0; i < slices.length; i += 1) {
+      const id = buildChunkId(doc, i);
       chunks.push({
+        id,
         title: slices.length > 1 ? `${doc.title} (chunk ${i + 1})` : doc.title,
         content: slices[i],
         url: doc.url,
@@ -461,8 +471,8 @@ const indexDocuments = async () => {
   }
   if (chunks.length === 0) {
     // 没有可用 chunk，写入空计数并记录签名。
-    setMeta(db, "ingest_signature", signature);
-    setMeta(db, "ingest_count", "0");
+    await setMeta(store, "ingest_signature", signature);
+    await setMeta(store, "ingest_count", "0");
     return;
   }
   /*
@@ -485,52 +495,45 @@ const indexDocuments = async () => {
   if (!dimension) {
     throw new Error("Embedding dimension missing from response.");
   }
-  // 校验向量维度并初始化 vec0 表。
-  ensureVectorTable(db, dimension);
+  const yellow = "\u001b[33m";
+  const reset = "\u001b[0m";
+  console.log(`${yellow}[local-rag] embedding dimension${reset}`, dimension);
   /*
-   * 全量重建（而非增量）：
-   * - 保证 rag_docs 与 rag_vectors 的 rowid 一一对应；
-   * - 避免历史脏数据影响相似度检索。
+   * 构建 VectorRecord 列表：
+   * - 使用稳定 ID 方便后端去重/更新；
+   * - metadata 保存 title/url，便于检索展示。
    */
-  db.exec("DELETE FROM rag_vectors;");
-  db.exec("DELETE FROM rag_docs;");
+  const records: VectorRecord<RagMetadata>[] = chunks.map((chunk, index) => ({
+    id: chunk.id,
+    embedding: embeddings[index],
+    text: chunk.content,
+    metadata: {
+      title: chunk.title,
+      url: chunk.url,
+    },
+  }));
   /*
-   * 文本与向量分表插入：
-   * - 先插 rag_docs，拿到自增 id；
-   * - 再用该 id 写入 rag_vectors.rowid；
-   * - 这样检索时可以用 rowid JOIN 回文本。
+   * 全量重建流程：
+   * - 先清空旧索引；
+   * - 再批量写入新记录；
+   * - 由 VectorStore 负责具体实现细节。
    */
-  const insertDoc = db.prepare(
-    "INSERT INTO rag_docs (title, content, url) VALUES (?, ?, ?)"
-  );
-  const insertVector = db.prepare(
-    "INSERT INTO rag_vectors (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)"
-  );
-  /*
-   * 事务批量写入：
-   * - 保证 rag_docs 与 rag_vectors 的同步一致；
-   * - 失败会回滚，避免部分插入。
-   */
-  const insertMany = db.transaction(() => {
-    for (let i = 0; i < chunks.length; i += 1) {
-      const doc = chunks[i];
-      const embedding = embeddings[i];
-      const result = insertDoc.run(doc.title, doc.content, doc.url ?? null);
-      insertVector.run(
-        Number(result.lastInsertRowid),
-        JSON.stringify(embedding)
-      );
-    }
-  });
-  insertMany();
+  if (!store.clear) {
+    throw new Error("VectorStore does not support clear().");
+  }
+  await store.clear();
+  await store.upsert(records, { dimension });
   // 更新索引签名与 chunk 数量。
-  setMeta(db, "ingest_signature", signature);
-  setMeta(db, "ingest_count", String(chunks.length));
+  await setMeta(store, "ingest_signature", signature);
+  await setMeta(store, "ingest_count", String(chunks.length));
 };
 
 export type RagResponse = {
   text: string;
   sources: Array<{ title: string; url?: string }>;
+  // 统一语义的 score：越大越相关。
+  score: number | null;
+  // 原始距离（若后端提供 distance），用于旧阈值逻辑或调参。
   distance: number | null;
   /*
    * snippets 为检索到的多个片段：
@@ -541,7 +544,8 @@ export type RagResponse = {
     title: string;
     url?: string;
     content: string;
-    distance: number;
+    score: number;
+    distance: number | null;
   }>;
 };
 
@@ -568,78 +572,70 @@ export const queryLocalRag = async (input: string): Promise<RagResponse> => {
     return {
       text: "不知道。",
       sources: [],
+      score: null,
       distance: null,
     };
   }
   // Lazy index build on first query or when files change.
   await ensureIndexed();
   const [embedding] = await embedTexts([input]);
-  const db = getDb();
+  const store = await getVectorStore();
   const requestedTopK = Number(process.env.RAG_TOP_K ?? DEFAULT_TOP_K);
   const topK = Number.isFinite(requestedTopK)
     ? Math.max(1, Math.min(requestedTopK, 50))
     : DEFAULT_TOP_K;
   /*
-   * vec0 的 KNN 查询说明（逐行）：
-   * - SELECT rag_docs.id/title/content/url: 直接取回可读文本与来源；
-   * - SELECT rag_vectors.distance: 相似度距离，用于阈值判断；
-   * - FROM rag_vectors: 以向量表作为检索入口；
-   * - JOIN rag_docs ON rag_docs.id = rag_vectors.rowid:
-   *   利用 rowid 对齐关系回查文本内容；
-   * - WHERE rag_vectors.embedding MATCH ?:
-   *   传入 query 的向量，触发 vec0 的向量检索；
-   * - AND k = ?: vec0 要求显式指定近邻数量；
-   * - ORDER BY rag_vectors.distance:
-   *   按距离升序，越小越相似。
+   * 统一向量检索：
+   * - 由 VectorStore 内部适配 sqlite/pg；
+   * - 统一返回 score（越大越相关）；
+   * - rawScore/rawScoreType 保留后端原始值。
    */
-  const rows = db
-    .prepare(
-      `
-    SELECT
-      rag_docs.id,
-      rag_docs.title,
-      rag_docs.content,
-      rag_docs.url,
-      rag_vectors.distance
-    FROM rag_vectors
-    JOIN rag_docs ON rag_docs.id = rag_vectors.rowid
-      WHERE rag_vectors.embedding MATCH ? AND k = ?
-      ORDER BY rag_vectors.distance
-      
-    `
-    )
-    .all(JSON.stringify(embedding), topK) as RagMatch[];
-  // 打印距离分布，便于调阈值与观察检索质量。
-  console.log(
-    "[local-rag] distances",
-    rows.map((row) => row.distance)
+  const matches = await store.query({
+    embedding,
+    topK,
+  });
+  const distances = matches.map((match) =>
+    match.rawScoreType === "distance" ? match.rawScore ?? null : null
   );
-  if (rows.length === 0) {
+  // 打印 score 与距离分布，便于调阈值与观察检索质量。
+  console.log("[local-rag] scores", matches.map((match) => match.score));
+  console.log("[local-rag] distances", distances);
+  if (matches.length === 0) {
     return {
       text: "不知道。",
       sources: [],
+      score: null,
       distance: null,
     };
   }
-  const best = rows[0];
+  const best = matches[0];
+  const bestDistance =
+    best.rawScoreType === "distance" ? best.rawScore ?? null : null;
   /*
    * 片段列表：
-   * - 每条包含标题、URL、裁剪后的内容与距离；
+   * - 每条包含标题、URL、裁剪后的内容与 score/距离；
    * - 供上层做“按编号引用”的提示词拼接。
    */
-  const snippets = rows.map((row) => ({
-    title: row.title,
-    url: row.url,
-    content: clip(normalizeAnswer(row.content), 360),
-    distance: row.distance,
+  const snippets = matches.map((match) => ({
+    title: match.metadata?.title ?? "Untitled",
+    url: match.metadata?.url,
+    content: clip(normalizeAnswer(match.text ?? ""), 360),
+    score: match.score,
+    distance: match.rawScoreType === "distance" ? match.rawScore ?? null : null,
   }));
   // 只取最相近的一条作为简短回答正文，避免冗长。
-  const answer = best ? clip(normalizeAnswer(best.content), 360) : "不知道。";
+  const answer = best
+    ? clip(normalizeAnswer(best.text ?? ""), 360)
+    : "不知道。";
   return {
     text: answer,
     // sources 与 snippets 对齐，返回所有检索命中的来源列表。
-    sources: rows.map((row) => ({ title: row.title, url: row.url })),
-    distance: best?.distance ?? null,
+    sources: matches.map((match) => ({
+      title: match.metadata?.title ?? "Untitled",
+      url: match.metadata?.url,
+    })),
+    score: best?.score ?? null,
+    distance: bestDistance,
     snippets,
   };
 };

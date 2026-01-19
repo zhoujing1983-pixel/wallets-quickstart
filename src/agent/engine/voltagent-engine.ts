@@ -78,7 +78,7 @@ const fetchWebsiteTool = tool({
           break;
         }
         await new Promise((resolve) =>
-          setTimeout(resolve, 500 * (attempt + 1))
+          setTimeout(resolve, 500 * (attempt + 1)),
         );
       } finally {
         clearTimeout(timeoutId);
@@ -91,7 +91,7 @@ const fetchWebsiteTool = tool({
 
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch ${url}: ${response.status} ${response.statusText}`
+        `Failed to fetch ${url}: ${response.status} ${response.statusText}`,
       );
     }
 
@@ -163,7 +163,7 @@ const stripNoThinkFromValue = (value: unknown): unknown => {
       Object.entries(node as Record<string, unknown>).map(([key, val]) => [
         key,
         walk(val, depth + 1),
-      ])
+      ]),
     );
   };
   return walk(value, 0);
@@ -216,7 +216,7 @@ const redactSensitive = (value: unknown): unknown => {
           return [key, maskSecret(val)];
         }
         return [key, redactSensitive(val)];
-      }
+      },
     );
     return Object.fromEntries(entries);
   }
@@ -252,8 +252,8 @@ const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
     typeof input === "string"
       ? input
       : input instanceof URL
-      ? input.toString()
-      : input.url;
+        ? input.toString()
+        : input.url;
   const safeUrl = redactUrl(url);
   if (typeof init.body === "string") {
     try {
@@ -285,7 +285,7 @@ const extractReasoningText = (output: unknown) => {
   }
 
   const normalizeMessage = (
-    message: Record<string, unknown> | undefined
+    message: Record<string, unknown> | undefined,
   ): string | undefined => {
     if (!message) {
       return undefined;
@@ -353,7 +353,7 @@ const wrapTextWithReason = (reasoning: string, text?: string) => {
 
 // 从 message 中归一化提取 reasoning 字段。
 const normalizeReasonFromMessage = (
-  message: Record<string, unknown> | undefined
+  message: Record<string, unknown> | undefined,
 ): string | undefined => {
   if (!message) {
     return undefined;
@@ -470,7 +470,7 @@ const sanitizeMessageForQwen = (message: UIMessage): UIMessage => {
       return { ...part };
     }) ?? [];
   const filteredParts = sanitizedParts.filter(
-    (part) => !(isTextPart(part) && !part.text)
+    (part) => !(isTextPart(part) && !part.text),
   );
   return {
     ...message,
@@ -480,19 +480,19 @@ const sanitizeMessageForQwen = (message: UIMessage): UIMessage => {
 
 // 类型守卫：判断 UIMessagePart 是否为文本。
 const isTextPart = (
-  part?: UIMessagePart<UIDataTypes, UITools>
+  part?: UIMessagePart<UIDataTypes, UITools>,
 ): part is TextUIPart => Boolean(part && part.type === "text");
 
 // 判断消息 parts 是否已包含 <reason>。
 const hasReasonPart = (parts?: UIMessage["parts"]) =>
   Boolean(
-    parts?.some((part) => isTextPart(part) && part.text.includes("<reason>"))
+    parts?.some((part) => isTextPart(part) && part.text.includes("<reason>")),
   );
 
 // 将 reasoning 作为首段文本插入消息。
 const withReasonMessage = (
   message: UIMessage,
-  reasoning: string
+  reasoning: string,
 ): UIMessage => {
   const trimmed = reasoning.trim();
   if (!trimmed) {
@@ -529,7 +529,7 @@ memory.saveMessageWithContext = async function (
   userId: SaveMessageWithContextArgs[1],
   conversationId: SaveMessageWithContextArgs[2],
   context: SaveMessageWithContextArgs[3],
-  operationContext: SaveMessageWithContextArgs[4]
+  operationContext: SaveMessageWithContextArgs[4],
 ) {
   const reasoning = operationContext?.context?.get(REASONING_CONTEXT_KEY);
   const shouldInjectReasoning =
@@ -548,7 +548,7 @@ memory.saveMessageWithContext = async function (
     userId,
     conversationId,
     context,
-    operationContext
+    operationContext,
   );
 };
 
@@ -603,7 +603,7 @@ const logFinalOutput = (output: unknown) => {
 const logLLMRequest = (
   label: string,
   input: RequestInfo | URL,
-  init?: RequestInit
+  init?: RequestInit,
 ) => {
   const entry = buildLogEntry(input, init);
   if (!entry) {
@@ -634,7 +634,7 @@ const logLLMResponse = async (label: string, response: Response) => {
             ? reasoning
             : undefined,
       },
-      { depth: null }
+      { depth: null },
     );
   } catch {
     // Ignore response logging failures.
@@ -644,7 +644,7 @@ const logLLMResponse = async (label: string, response: Response) => {
 // 兼容 Headers/数组/对象的读取方式，统一拿到 header 值。
 const readHeaderValue = (
   headers: HeadersInit | undefined,
-  name: string
+  name: string,
 ): string | undefined => {
   if (!headers) {
     return undefined;
@@ -671,7 +671,7 @@ const readHeaderValue = (
 
 // 解析自定义 Header，允许前端控制 Qwen thinking 开关。
 const parseEnableThinkingHeader = (
-  headers: HeadersInit | undefined
+  headers: HeadersInit | undefined,
 ): boolean | undefined => {
   const raw = readHeaderValue(headers, "x-qwen-enable-thinking");
   if (!raw) {
@@ -696,7 +696,7 @@ const parseEnableThinkingHeader = (
 const createLoggedFetch = (
   label: string,
   transformBody?: (body: string, init?: RequestInit) => string,
-  options?: { logResponse?: boolean }
+  options?: { logResponse?: boolean },
 ): typeof fetch => {
   return async (input, init) => {
     if (init?.body && typeof init.body === "string" && transformBody) {
@@ -791,7 +791,7 @@ const appendNoThinkToBody = (body: string) => {
       if (Array.isArray(message.content)) {
         const hasNoThink = message.content.some(
           (part: { text?: unknown }) =>
-            typeof part?.text === "string" && part.text.includes("/no_think")
+            typeof part?.text === "string" && part.text.includes("/no_think"),
         );
         if (!hasNoThink) {
           message.content = [
@@ -887,10 +887,10 @@ const qwenProvider = createOpenAI({
       const enableThinking = parseEnableThinkingHeader(init?.headers);
       return enableQwenThinking(
         injectQwenReasoningLanguage(rewriteDeveloperRole(body)),
-        enableThinking
+        enableThinking,
       );
     },
-    { logResponse: true }
+    { logResponse: true },
   ),
 });
 
@@ -913,7 +913,7 @@ if (!instructions) {
 // Selected model provider from environment.
 const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
 const lmStudioTemperature = parseOptionalNumber(
-  process.env.LM_STUDIO_TEMPERATURE
+  process.env.LM_STUDIO_TEMPERATURE,
 );
 const lmStudioMaxTokens = parseOptionalNumber(process.env.LM_STUDIO_MAX_TOKENS);
 const lmStudioMaxOutputTokens =
@@ -937,10 +937,10 @@ const model =
   provider === "google"
     ? googleProvider(process.env.GOOGLE_MODEL ?? "gemini-1.5-flash")
     : provider === "lmstudio"
-    ? lmStudioProvider.chat(process.env.LM_STUDIO_MODEL ?? "local-model")
-    : provider === "qwen"
-    ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
-    : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
+      ? lmStudioProvider.chat(process.env.LM_STUDIO_MODEL ?? "local-model")
+      : provider === "qwen"
+        ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
+        : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
 
 // Main agent instance with tools and hooks.
 const agentTools = [fetchWebsiteTool, localRagTool];
@@ -948,7 +948,8 @@ const agent = new Agent({
   name: "FinyxWaaSAgent",
   instructions,
   model,
-  temperature: provider === "lmstudio" ? lmStudioTemperature ?? 0.7 : undefined,
+  temperature:
+    provider === "lmstudio" ? (lmStudioTemperature ?? 0.7) : undefined,
   maxOutputTokens:
     provider === "lmstudio" ? lmStudioMaxOutputTokens : undefined,
   /*
@@ -966,7 +967,7 @@ const agent = new Agent({
       }
       // Qwen 发送前去除 think 标签，避免泄露推理。
       const sanitizedMessages = args.messages.map((message) =>
-        sanitizeMessageForQwen(message)
+        sanitizeMessageForQwen(message),
       );
       return { messages: sanitizedMessages };
     },
@@ -1005,7 +1006,7 @@ const agent = new Agent({
  * - ragMode=rag 时优先走本地 RAG；
  * - hybrid 模式下根据 distance 阈值决定是否回退到 LLM；
  * - ragMode=llm 时直接调用 agent 生成答案；
- * - 输出统一为 { text, sources, distance }，便于前端消费。
+ * - 输出统一为 { text, sources, score, distance }，便于前端消费。
  */
 const localRagWorkflow = createWorkflow(
   {
@@ -1029,8 +1030,9 @@ const localRagWorkflow = createWorkflow(
         z.object({
           title: z.string(),
           url: z.string().optional(),
-        })
+        }),
       ),
+      score: z.number().nullable(),
       distance: z.number().nullable(),
     }),
   },
@@ -1055,8 +1057,9 @@ const localRagWorkflow = createWorkflow(
         z.object({
           title: z.string(),
           url: z.string().optional(),
-        })
+        }),
       ),
+      score: z.number().nullable(),
       distance: z.number().nullable(),
     }),
     execute: async ({ data }) => {
@@ -1066,7 +1069,7 @@ const localRagWorkflow = createWorkflow(
       const reset = "\u001b[0m";
       console.log(
         `${yellow}[rag-flow] 当前分支判断${reset}`,
-        JSON.stringify({ ragMode, proxyMode: mode })
+        JSON.stringify({ ragMode, proxyMode: mode }),
       );
       /*
        * 本地 RAG + LLM 拼接开关：
@@ -1076,12 +1079,26 @@ const localRagWorkflow = createWorkflow(
        */
       const enableSummary =
         (process.env.LOCAL_RAG_USE_LLM_SUMMARY ?? "").toLowerCase() !== "false";
+      if (!enableSummary) {
+        console.log(
+          `${yellow}[rag-flow] LLM summary 禁用${reset}`,
+          JSON.stringify({ reason: "LOCAL_RAG_USE_LLM_SUMMARY=false" }),
+        );
+      }
       /*
        * 检索阈值：
-       * - RAG_DISTANCE_THRESHOLD 越小越严格；
-       * - 用于判断是否“找到答案”与 hybrid 回退条件。
+       * - 优先使用 RAG_SCORE_THRESHOLD（越大越严格）；
+       * - 若未提供 score 阈值，则回退到 RAG_DISTANCE_THRESHOLD（越小越严格）；
+       * - 兼容旧配置，同时为“统一 score 语义”预留升级路径。
        */
-      const threshold = Number(process.env.RAG_DISTANCE_THRESHOLD ?? 0.35);
+      const scoreThresholdRaw = process.env.RAG_SCORE_THRESHOLD;
+      const scoreThreshold = scoreThresholdRaw
+        ? Number(scoreThresholdRaw)
+        : undefined;
+      const distanceThreshold = Number(
+        process.env.RAG_DISTANCE_THRESHOLD ?? 0.35,
+      );
+      const hasScoreThreshold = Number.isFinite(scoreThreshold);
       /*
        * enableThinking 处理：
        * - 与旧流程一致，仅对 Qwen 开关推理能力；
@@ -1100,21 +1117,28 @@ const localRagWorkflow = createWorkflow(
         const ragResult = await runLocalRag(data.query);
         const isAnswer =
           ragResult.text.trim() !== "不知道。" &&
-          ragResult.distance !== null &&
-          ragResult.distance <= threshold;
+          (hasScoreThreshold
+            ? ragResult.score !== null &&
+              ragResult.score >= (scoreThreshold as number)
+            : ragResult.distance !== null &&
+              ragResult.distance <= distanceThreshold);
         console.log(
           `${yellow}[rag-flow] 本地RAG命中结果${reset}`,
           JSON.stringify(
             {
               hit: isAnswer,
+              score: ragResult.score,
               distance: ragResult.distance,
+              threshold: hasScoreThreshold
+                ? { score: scoreThreshold }
+                : { distance: distanceThreshold },
               content: isAnswer ? ragResult.text : undefined,
               sources: isAnswer ? ragResult.sources : undefined,
               snippets: isAnswer ? ragResult.snippets : undefined,
             },
             null,
-            2
-          )
+            2,
+          ),
         );
         if (!enableSummary && isAnswer) {
           // 关闭 LLM 拼接时，直接返回本地 RAG 结果。
@@ -1130,11 +1154,12 @@ const localRagWorkflow = createWorkflow(
                   text: ragResult.text,
                   snippets: ragResult.snippets,
                   sources: ragResult.sources,
+                  score: ragResult.score,
                   distance: ragResult.distance,
                 },
                 null,
-                2
-              )
+                2,
+              ),
             );
             /*
              * RAG 提示词组装（强化版）：
@@ -1153,14 +1178,14 @@ const localRagWorkflow = createWorkflow(
                     })
                     .join("\n")
                 : ragResult.sources.length > 0
-                ? ragResult.sources
-                    .map((source, index) => {
-                      const label = `[${index + 1}] ${source.title}`;
-                      const url = source.url ? ` (${source.url})` : "";
-                      return `${label}${url}`;
-                    })
-                    .join("\n")
-                : "无可用来源";
+                  ? ragResult.sources
+                      .map((source, index) => {
+                        const label = `[${index + 1}] ${source.title}`;
+                        const url = source.url ? ` (${source.url})` : "";
+                        return `${label}${url}`;
+                      })
+                      .join("\n")
+                  : "无可用来源";
             const contextSnippet =
               ragResult.text.length > 800
                 ? `${ragResult.text.slice(0, 800).trimEnd()}…`
@@ -1200,16 +1225,13 @@ const localRagWorkflow = createWorkflow(
             ];
             const prompt = contextLines.join("\n");
             console.log(`${yellow}[rag-flow] 组装Prompt${reset}\n${prompt}`);
-            const llmResult = await agent.generateText(
-              prompt,
-              {
-                userId: data.options?.userId,
-                conversationId: data.options?.conversationId,
-                headers: requestHeaders,
-                // 注入 ragMode 到上下文，用于动态工具策略判断。
-                context: buildToolCallContext(ragMode),
-              }
-            );
+            const llmResult = await agent.generateText(prompt, {
+              userId: data.options?.userId,
+              conversationId: data.options?.conversationId,
+              headers: requestHeaders,
+              // 注入 ragMode 到上下文，用于动态工具策略判断。
+              context: buildToolCallContext(ragMode),
+            });
             const text =
               typeof llmResult.text === "string" && llmResult.text.trim()
                 ? llmResult.text
@@ -1217,6 +1239,7 @@ const localRagWorkflow = createWorkflow(
             return {
               text,
               sources: ragResult.sources,
+              score: ragResult.score,
               distance: ragResult.distance,
             };
           }
@@ -1235,13 +1258,12 @@ const localRagWorkflow = createWorkflow(
           return {
             text,
             sources: [],
+            score: null,
             distance: null,
           };
         }
         // 关闭 LLM 拼接时，如果未命中且处于 hybrid，则回退到 LLM。
-        const shouldFallback =
-          mode === "hybrid" &&
-          (ragResult.distance === null || ragResult.distance > threshold);
+        const shouldFallback = mode === "hybrid" && !isAnswer;
         if (!shouldFallback) {
           return ragResult;
         }
@@ -1261,10 +1283,11 @@ const localRagWorkflow = createWorkflow(
       return {
         text,
         sources: [],
+        score: null,
         distance: null,
       };
     },
-  })
+  }),
 );
 
 /*

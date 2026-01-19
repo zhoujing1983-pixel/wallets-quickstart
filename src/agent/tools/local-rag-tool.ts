@@ -38,6 +38,8 @@ export const localRagTool = tool({
         url: z.string().optional(),
       })
     ),
+    // 统一语义的 score（越大越相关）。
+    score: z.number().nullable(),
     // 最近的距离分数，无法判定时为 null。
     distance: z.number().nullable(),
     // 多片段返回，便于按编号引用。
@@ -47,7 +49,8 @@ export const localRagTool = tool({
           title: z.string(),
           url: z.string().optional(),
           content: z.string(),
-          distance: z.number(),
+          score: z.number(),
+          distance: z.number().nullable(),
         })
       )
       .optional(),
@@ -58,6 +61,7 @@ export const localRagTool = tool({
     const result = await runLocalRag(query);
     // 记录基础统计信息，避免日志过大。
     console.log("\n[tool:exec] local_rag_query result", {
+      score: result.score,
       distance: result.distance,
       sources: result.sources.length,
     });
