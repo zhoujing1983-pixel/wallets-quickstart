@@ -1,0 +1,6 @@
+/*
+ * Engine 层统一出口占位：
+ * - 预留给 engine 内部的公共导出；
+ * - 当前由 voltagent-engine.ts 直接对外提供 agent/workflows；
+ * - 后续如需拆分可在此聚合。
+ */

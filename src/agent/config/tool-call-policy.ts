@@ -12,12 +12,21 @@
  * - 前端打开“LLM 开关”时，可以彻底避免模型“顺手”调用本地 RAG 工具；
  * - 同时保留 ragMode=rag 的工具能力，避免破坏原本的检索体验。
  */
-const toolCallPolicy = (process.env.AGENT_TOOL_CALL_POLICY ?? "auto").toLowerCase();
+// 从环境变量读取工具调用策略，统一规范成小写便于判断。
+const toolCallPolicy = (
+  process.env.AGENT_TOOL_CALL_POLICY ?? "auto"
+).toLowerCase();
 
 type RagMode = "rag" | "llm";
 
+// 上下文里存放 ragMode 的键名，避免与业务字段冲突。
 const TOOL_CALL_RAG_MODE_KEY = "toolCallRagMode";
 
+/*
+ * 从上下文推断 ragMode：
+ * - 不存在时默认 rag；
+ * - 仅当显式写入 "llm" 时走 llm。
+ */
 const resolveRagMode = (
   context?: Map<string | symbol, unknown>
 ): RagMode => {
@@ -25,6 +34,12 @@ const resolveRagMode = (
   return raw === "llm" ? "llm" : "rag";
 };
 
+/*
+ * 基于策略判断是否允许工具调用：
+ * - off：全局禁用；
+ * - rag-only：ragMode=llm 时禁用；
+ * - auto：保持默认行为。
+ */
 const shouldAllowTools = (ragMode: RagMode) => {
   if (toolCallPolicy === "off") {
     return false;
@@ -35,10 +50,16 @@ const shouldAllowTools = (ragMode: RagMode) => {
   return true;
 };
 
+// 生成注入上下文的对象，方便上层传入到 Agent 调用。
 export const buildToolCallContext = (ragMode: RagMode) => ({
   [TOOL_CALL_RAG_MODE_KEY]: ragMode,
 });
 
+/*
+ * 根据 ragMode 过滤工具列表：
+ * - 没有上下文时保持原工具列表；
+ * - 策略命中时直接返回空数组，阻断模型调用。
+ */
 export const resolveToolCallTools = <T>(
   context: Map<string | symbol, unknown> | undefined,
   tools: T[]

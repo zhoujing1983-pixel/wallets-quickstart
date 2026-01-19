@@ -26,7 +26,12 @@ import type {
   UITools,
 } from "ai";
 
-// Tool to fetch and sanitize website content for summaries.
+/*
+ * 网站内容抓取工具：
+ * - 用于将网页原文提取为纯文本，便于后续摘要/分析；
+ * - 内建超时与重试，避免请求挂死；
+ * - 对 HTML 做基础清洗，减少脚本/样式噪声。
+ */
 const fetchWebsiteTool = tool({
   name: "fetch_website_content",
   description:
@@ -115,16 +120,25 @@ const fetchWebsiteTool = tool({
   },
 });
 
+// 对话记忆持久化地址，默认写入本地 sqlite。
 const memoryUrl = process.env.VOLTAGENT_MEMORY_URL ?? "file:./agent-memory.db";
 const memory = new Memory({
   storage: new LibSQLMemoryAdapter({ url: memoryUrl }),
 });
 console.log(`[memory] persisting conversations at ${memoryUrl}`);
 
+// 适配 Memory 的动态方法访问，便于包裹日志。
 const memoryAny = memory as Memory & Record<string, any>;
+// 清理 /no_think 标记，避免污染持久化内容。
 const stripNoThinkFromText = (text: string) =>
   text.replace(/\s*\/no_think\b/g, "").trim();
 
+/*
+ * 深度遍历参数，剥离 /no_think：
+ * - 适配复杂对象/数组结构；
+ * - 避免循环引用导致崩溃；
+ * - 递归深度限制，防止异常结构。
+ */
 const stripNoThinkFromValue = (value: unknown): unknown => {
   const seen = new WeakSet<object>();
   const maxDepth = 50;
@@ -155,6 +169,12 @@ const stripNoThinkFromValue = (value: unknown): unknown => {
   return walk(value, 0);
 };
 
+/*
+ * 给 Memory 方法加一层日志与清洗：
+ * - 记录调用参数，便于排查；
+ * - 清理 no_think 内容，避免污染记忆；
+ * - 保持原有返回值与异常。
+ */
 const wrapMemoryMethod = (name: string) => {
   const original = memoryAny[name]?.bind(memory);
   if (typeof original !== "function") {
@@ -218,7 +238,12 @@ const redactUrl = (rawUrl: string) => {
   }
 };
 
-// Build a safe, structured log entry for an LLM request.
+/*
+ * 组装可安全记录的 LLM 请求日志：
+ * - 统一脱敏 key/token/authorization 等字段；
+ * - 支持 body 为字符串或对象；
+ * - 避免直接打印敏感请求体。
+ */
 const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
   if (!init?.body) {
     return null;
@@ -241,6 +266,12 @@ const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
   return { url: safeUrl, body: redactSensitive(init.body) };
 };
 
+/*
+ * 从不同 SDK/Provider 响应中提取 reasoning：
+ * - 支持顶层 reasoningText；
+ * - 支持 choices/message 中 reasoning_content 字段；
+ * - 兼容 OpenAI-compatible 与 provider wrapper 结构。
+ */
 const extractReasoningText = (output: unknown) => {
   if (!output || typeof output !== "object") {
     return undefined;
@@ -307,6 +338,7 @@ const extractReasoningText = (output: unknown) => {
 
 let lastQwenReasoning: string | undefined;
 
+// 将 reasoning 以 <reason> 包裹并拼接到最终文本。
 const wrapTextWithReason = (reasoning: string, text?: string) => {
   const trimmedReasoning = reasoning.trim();
   if (!trimmedReasoning) {
@@ -319,6 +351,7 @@ const wrapTextWithReason = (reasoning: string, text?: string) => {
   return `${reasonBlock}\n${text}`;
 };
 
+// 从 message 中归一化提取 reasoning 字段。
 const normalizeReasonFromMessage = (
   message: Record<string, unknown> | undefined
 ): string | undefined => {
@@ -336,6 +369,11 @@ const normalizeReasonFromMessage = (
   return undefined;
 };
 
+/*
+ * 从 provider response 结构中提取 reasoning：
+ * - 覆盖 choices/messages 与 body 内嵌结构；
+ * - 一旦命中直接返回，避免重复扫描。
+ */
 const extractReasoningFromProviderResponse = (response: unknown) => {
   if (!response || typeof response !== "object") {
     return undefined;
@@ -369,8 +407,10 @@ const extractReasoningFromProviderResponse = (response: unknown) => {
   return undefined;
 };
 
+// 用 Symbol 作为上下文键，避免与业务字段冲突。
 const REASONING_CONTEXT_KEY = Symbol("voltagent:reasoning");
 
+// 解析布尔环境变量，允许 0/1/true/false/no/yes。
 const parseBooleanEnv = (value: string | undefined) => {
   if (!value) {
     return undefined;
@@ -388,11 +428,17 @@ const parseBooleanEnv = (value: string | undefined) => {
 const shouldStoreReasoningInMemory =
   parseBooleanEnv(process.env.VOLTAGENT_SAVE_REASONING_TO_MEMORY) ?? false;
 
+// 清理 <think>/<reason> 标签，避免泄露推理细节。
 const THINK_TAG_REGEX =
   /<\s*(?:think|reason)[^>]*>[\s\S]*?<\/\s*(?:think|reason)\s*>/gi;
 const stripThinkTags = (text: string) =>
   text.replace(THINK_TAG_REGEX, "").trim();
 
+/*
+ * 记忆落库前的消息清洗：
+ * - 移除 <think>/<reason>；
+ * - 过滤空文本段，避免保存空壳消息。
+ */
 const sanitizeMessageForMemory = (message: UIMessage): UIMessage => {
   const sanitizedParts = message.parts
     ?.map((part) => {
@@ -409,6 +455,11 @@ const sanitizeMessageForMemory = (message: UIMessage): UIMessage => {
   return message;
 };
 
+/*
+ * Qwen 发送前清洗：
+ * - 删除思维标签，避免模型看到内部推理；
+ * - 维持 parts 结构，兼容多模态输入。
+ */
 const sanitizeMessageForQwen = (message: UIMessage): UIMessage => {
   const sanitizedParts =
     message.parts?.map((part) => {
@@ -427,15 +478,18 @@ const sanitizeMessageForQwen = (message: UIMessage): UIMessage => {
   };
 };
 
+// 类型守卫：判断 UIMessagePart 是否为文本。
 const isTextPart = (
   part?: UIMessagePart<UIDataTypes, UITools>
 ): part is TextUIPart => Boolean(part && part.type === "text");
 
+// 判断消息 parts 是否已包含 <reason>。
 const hasReasonPart = (parts?: UIMessage["parts"]) =>
   Boolean(
     parts?.some((part) => isTextPart(part) && part.text.includes("<reason>"))
   );
 
+// 将 reasoning 作为首段文本插入消息。
 const withReasonMessage = (
   message: UIMessage,
   reasoning: string
@@ -462,6 +516,12 @@ type SaveMessageWithContextArgs = Parameters<
   typeof memory.saveMessageWithContext
 >;
 
+/*
+ * 拦截 Memory.saveMessageWithContext：
+ * - 可选注入 reasoning；
+ * - 统一做 think 标签清洗；
+ * - 保持原调用签名不变。
+ */
 const originalSaveMessageWithContext =
   memory.saveMessageWithContext.bind(memory);
 memory.saveMessageWithContext = async function (
@@ -492,6 +552,11 @@ memory.saveMessageWithContext = async function (
   );
 };
 
+/*
+ * 输出守卫：把 reasoning 注入到最终文本中（仅在需要时）：
+ * - 输出已包含 <reason> 时跳过；
+ * - 注入后清理上下文，避免重复。
+ */
 const reasoningInjectionGuardrail = createOutputGuardrail({
   id: "reasoning-injector",
   name: "Inject reasoning when available",
@@ -517,6 +582,7 @@ const reasoningInjectionGuardrail = createOutputGuardrail({
   },
 });
 
+// 收口输出日志，统一记录 reasoning 与最终文本。
 const logFinalOutput = (output: unknown) => {
   if (!output || typeof output !== "object") {
     return;
@@ -547,6 +613,7 @@ const logLLMRequest = (
   console.dir(entry, { depth: null });
 };
 
+// 打印 LLM 响应的关键字段（含 usage 与 reasoning）。
 const logLLMResponse = async (label: string, response: Response) => {
   try {
     const cloned = response.clone();
@@ -574,6 +641,7 @@ const logLLMResponse = async (label: string, response: Response) => {
   }
 };
 
+// 兼容 Headers/数组/对象的读取方式，统一拿到 header 值。
 const readHeaderValue = (
   headers: HeadersInit | undefined,
   name: string
@@ -601,6 +669,7 @@ const readHeaderValue = (
   return direct;
 };
 
+// 解析自定义 Header，允许前端控制 Qwen thinking 开关。
 const parseEnableThinkingHeader = (
   headers: HeadersInit | undefined
 ): boolean | undefined => {
@@ -618,7 +687,12 @@ const parseEnableThinkingHeader = (
   return undefined;
 };
 
-// Create a fetch wrapper that logs requests and optionally rewrites bodies.
+/*
+ * 创建带日志的 fetch 包装器：
+ * - 请求前做脱敏日志；
+ * - 可选重写 body（改 role / 插入指令等）；
+ * - 可选记录响应摘要。
+ */
 const createLoggedFetch = (
   label: string,
   transformBody?: (body: string, init?: RequestInit) => string,
@@ -663,6 +737,7 @@ const rewriteDeveloperRole = (body: string) => {
   return JSON.stringify(payload);
 };
 
+// 将 Qwen reasoning 指令写入 system prompt（如未包含）。
 const injectQwenReasoningLanguage = (body: string) => {
   try {
     const payload = JSON.parse(body);
@@ -690,6 +765,12 @@ const injectQwenReasoningLanguage = (body: string) => {
   }
 };
 
+/*
+ * 对最后一条用户消息追加 /no_think：
+ * - 适配字符串与多段 content；
+ * - 避免重复追加；
+ * - 仅用于兼容本地模型的禁思考开关。
+ */
 const appendNoThinkToBody = (body: string) => {
   try {
     const payload = JSON.parse(body);
@@ -728,6 +809,12 @@ const appendNoThinkToBody = (body: string) => {
   }
 };
 
+/*
+ * 启用 Qwen thinking：
+ * - 读取 header 覆盖 enable_thinking；
+ * - 对流式输出补充 usage；
+ * - 可选设置 thinking_budget。
+ */
 const enableQwenThinking = (body: string, enableThinking?: boolean) => {
   try {
     const payload = JSON.parse(body);
@@ -759,12 +846,14 @@ const enableQwenThinking = (body: string, enableThinking?: boolean) => {
   }
 };
 
+// 解析可选数字环境变量，非法时返回 undefined。
 const parseOptionalNumber = (value: string | undefined) => {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+// LM Studio 是否强制追加 /no_think。
 const lmStudioNoThink =
   (process.env.LM_STUDIO_NO_THINK ?? "").toLowerCase() === "true";
 
@@ -875,6 +964,7 @@ const agent = new Agent({
       if (provider !== "qwen") {
         return { messages: args.messages };
       }
+      // Qwen 发送前去除 think 标签，避免泄露推理。
       const sanitizedMessages = args.messages.map((message) =>
         sanitizeMessageForQwen(message)
       );

@@ -1,0 +1,6 @@
+/*
+ * Agent 模块统一出口占位：
+ * - 预留给上层统一导出 agent、workflows 等能力；
+ * - 目前实际实现位于 engine/voltagent-engine.ts；
+ * - 保留入口，便于未来聚合与拆分。
+ */
