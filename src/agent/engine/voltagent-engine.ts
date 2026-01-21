@@ -14,10 +14,13 @@ import "dotenv/config";
 import { LibSQLMemoryAdapter } from "@voltagent/libsql";
 // 引入本地 RAG 工具与执行函数：用于工具调用与 workflow 步骤。
 import { localRagTool, runLocalRag } from "@/agent/tools/local-rag-tool";
+import { buildSkillContextPrefix } from "@/agent/skills/skill-loader";
 import {
   buildToolCallContext,
   resolveToolCallTools,
 } from "@/agent/config/tool-call-policy";
+import { createRoutingAgent } from "@/agent/routing/routing-agent";
+import { ROUTING_WORKFLOWS } from "@/agent/routing/routing-config";
 import type {
   TextUIPart,
   UIDataTypes,
@@ -1000,6 +1003,9 @@ const agent = new Agent({
   },
 });
 
+// Routing-only agent: minimal prompt and deterministic output.
+const routingAgent = createRoutingAgent(model);
+
 /*
  * 本地 RAG Workflow（带可选 LLM 回退）：
  * - 输入包含 query 与前端传来的 ragMode；
@@ -1063,6 +1069,11 @@ const localRagWorkflow = createWorkflow(
       distance: z.number().nullable(),
     }),
     execute: async ({ data }) => {
+      const skillContextPrefix = await buildSkillContextPrefix(data.query);
+      const buildUserPrompt = (query: string) =>
+        skillContextPrefix
+          ? `${skillContextPrefix}\n\nUser Question:\n${query}`
+          : query;
       const mode = process.env.AGENT_PROXY_MODE ?? "local-rag";
       const ragMode = data.options?.ragMode === "llm" ? "llm" : "rag";
       const yellow = "\u001b[33m";
@@ -1223,7 +1234,10 @@ const localRagWorkflow = createWorkflow(
               `Question: ${data.query}`,
               "Answer:",
             ];
-            const prompt = contextLines.join("\n");
+            const basePrompt = contextLines.join("\n");
+            const prompt = skillContextPrefix
+              ? `${skillContextPrefix}\n\n${basePrompt}`
+              : basePrompt;
             console.log(`${yellow}[rag-flow] 组装Prompt${reset}\n${prompt}`);
             const llmResult = await agent.generateText(prompt, {
               userId: data.options?.userId,
@@ -1244,7 +1258,7 @@ const localRagWorkflow = createWorkflow(
             };
           }
           // 未命中就让 LLM 直接思考回答。
-          const llmResult = await agent.generateText(data.query, {
+          const llmResult = await agent.generateText(buildUserPrompt(data.query), {
             userId: data.options?.userId,
             conversationId: data.options?.conversationId,
             headers: requestHeaders,
@@ -1269,7 +1283,7 @@ const localRagWorkflow = createWorkflow(
         }
       }
       // ragMode=llm 或非 RAG 模式时，直接走 LLM。
-      const llmResult = await agent.generateText(data.query, {
+      const llmResult = await agent.generateText(buildUserPrompt(data.query), {
         userId: data.options?.userId,
         conversationId: data.options?.conversationId,
         headers: requestHeaders,
@@ -1290,14 +1304,359 @@ const localRagWorkflow = createWorkflow(
   }),
 );
 
+
+const returnCaseSchema = z.object({
+  decision: z.enum(["eligible", "ineligible", "needs_info"]),
+  missingFields: z.array(z.string()),
+  nextSteps: z.array(z.string()),
+  summary: z.string(),
+  request: z.object({
+    orderId: z.string().optional(),
+    contact: z.string().optional(),
+    items: z.string().optional(),
+    purchaseDate: z.string().optional(),
+    reason: z.string().optional(),
+    condition: z.string().optional(),
+    preferredResolution: z.string().optional(),
+  }),
+});
+
+type ReturnCase = z.infer<typeof returnCaseSchema>;
+
+const coerceStringArray = (value: unknown) =>
+  Array.isArray(value)
+    ? value
+        .map((item) => (typeof item === "string" ? item.trim() : String(item)))
+        .filter(Boolean)
+    : [];
+
+const normalizeReturnCase = (payload: any): ReturnCase => {
+  const decision =
+    payload?.decision === "eligible" ||
+    payload?.decision === "ineligible" ||
+    payload?.decision === "needs_info"
+      ? payload.decision
+      : "needs_info";
+  return {
+    decision,
+    missingFields: coerceStringArray(payload?.missingFields),
+    nextSteps: coerceStringArray(payload?.nextSteps),
+    summary: typeof payload?.summary === "string" ? payload.summary.trim() : "",
+    request: {
+      orderId:
+        typeof payload?.request?.orderId === "string"
+          ? payload.request.orderId.trim()
+          : undefined,
+      contact:
+        typeof payload?.request?.contact === "string"
+          ? payload.request.contact.trim()
+          : undefined,
+      items:
+        typeof payload?.request?.items === "string"
+          ? payload.request.items.trim()
+          : undefined,
+      purchaseDate:
+        typeof payload?.request?.purchaseDate === "string"
+          ? payload.request.purchaseDate.trim()
+          : undefined,
+      reason:
+        typeof payload?.request?.reason === "string"
+          ? payload.request.reason.trim()
+          : undefined,
+      condition:
+        typeof payload?.request?.condition === "string"
+          ? payload.request.condition.trim()
+          : undefined,
+      preferredResolution:
+        typeof payload?.request?.preferredResolution === "string"
+          ? payload.request.preferredResolution.trim()
+          : undefined,
+    },
+  };
+};
+
+const extractJsonPayload = (text: string) => {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced && fenced[1]) {
+    return fenced[1].trim();
+  }
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return text.slice(firstBrace, lastBrace + 1).trim();
+  }
+  return null;
+};
+
+const parseReturnCase = (text: string): ReturnCase => {
+  const payload = extractJsonPayload(text);
+  if (payload) {
+    try {
+      const parsed = JSON.parse(payload);
+      const normalized = normalizeReturnCase(parsed);
+      const result = returnCaseSchema.safeParse(normalized);
+      if (result.success) {
+        return result.data;
+      }
+    } catch (error) {
+      console.warn("[return-workflow] failed to parse JSON", error);
+    }
+  }
+  return {
+    decision: "needs_info",
+    missingFields: [
+      "orderId",
+      "contact",
+      "items",
+      "purchaseDate",
+      "reason",
+      "condition",
+      "preferredResolution",
+    ],
+    nextSteps: ["Provide the missing return details so we can proceed."],
+    summary: text.trim().slice(0, 400),
+    request: {},
+  };
+};
+
+const returnWorkflow = createWorkflow(
+  {
+    id: "return-request-workflow",
+    name: "Return Request Workflow",
+    purpose: "Route and structure ecommerce return/refund requests.",
+    input: z.object({
+      query: z.string().min(1),
+      options: z
+        .object({
+          userId: z.string().optional(),
+          conversationId: z.string().optional(),
+          enableThinking: z.boolean().optional(),
+          ragMode: z.enum(["rag", "llm"]).optional(),
+        })
+        .optional(),
+    }),
+    result: z.object({
+      case: returnCaseSchema,
+      rawText: z.string(),
+      replyText: z.string(),
+    }),
+  },
+  andThen({
+    id: "return-request-run",
+    name: "退货流程",
+    purpose: "Analyze a return request and output a structured case.",
+    inputSchema: z.object({
+      query: z.string().min(1),
+      options: z
+        .object({
+          userId: z.string().optional(),
+          conversationId: z.string().optional(),
+          enableThinking: z.boolean().optional(),
+          ragMode: z.enum(["rag", "llm"]).optional(),
+        })
+        .optional(),
+    }),
+    outputSchema: z.object({
+      case: returnCaseSchema,
+      rawText: z.string(),
+      replyText: z.string(),
+    }),
+    execute: async ({ data }) => {
+      const ragMode = data.options?.ragMode === "rag" ? "rag" : "llm";
+      const enableThinking =
+        typeof data.options?.enableThinking === "boolean"
+          ? data.options.enableThinking
+          : undefined;
+      const requestHeaders =
+        provider === "qwen" && enableThinking !== undefined
+          ? { "x-qwen-enable-thinking": String(enableThinking) }
+          : undefined;
+      const skillContextPrefix = await buildSkillContextPrefix(data.query, {
+        forceSkills: ["ecommerce-returns"],
+      });
+      const promptSections = [
+        skillContextPrefix,
+        "You are a return-requests agent. Analyze the user message and produce JSON only.",
+        "Return JSON schema:",
+        JSON.stringify(
+          {
+            decision: "eligible | ineligible | needs_info",
+            missingFields: ["orderId", "contact", "items", "purchaseDate"],
+            nextSteps: ["step 1", "step 2"],
+            summary: "short summary",
+            request: {
+              orderId: "",
+              contact: "",
+              items: "",
+              purchaseDate: "",
+              reason: "",
+              condition: "",
+              preferredResolution: "refund | exchange | store credit",
+            },
+          },
+          null,
+          2
+        ),
+        "Constraints:",
+        "- Output only JSON. No markdown or extra text.",
+        "- Use needs_info when required details are missing.",
+        `User Message:\n${data.query}`,
+      ].filter(Boolean);
+      const prompt = promptSections.join("\n\n");
+      const llmResult = await agent.generateText(prompt, {
+        userId: data.options?.userId,
+        conversationId: data.options?.conversationId,
+        headers: requestHeaders,
+        context: buildToolCallContext(ragMode),
+      });
+      const rawText =
+        typeof llmResult.text === "string" ? llmResult.text : "";
+      const parsed = parseReturnCase(rawText);
+      const replyPromptSections = [
+        skillContextPrefix,
+        "You are a customer support agent for ecommerce returns.",
+        "Write a natural, friendly reply in Chinese to the user.",
+        "Do not mention internal fields like summary/missingFields.",
+        "If info is missing, ask concise follow-up questions in one message.",
+        "Keep it short and human.",
+        `User Message:\n${data.query}`,
+        "Case JSON:",
+        JSON.stringify(parsed, null, 2),
+      ].filter(Boolean);
+      const replyPrompt = replyPromptSections.join("\n\n");
+      const replyResult = await agent.generateText(replyPrompt, {
+        userId: data.options?.userId,
+        conversationId: data.options?.conversationId,
+        headers: requestHeaders,
+        context: buildToolCallContext("llm"),
+      });
+      const replyText =
+        typeof replyResult.text === "string" && replyResult.text.trim()
+          ? replyResult.text.trim()
+          : "";
+      const yellow = "\u001b[33m";
+      const reset = "\u001b[0m";
+      console.log(`${yellow}[return-workflow] replyText${reset}\n${replyText}`);
+      return { case: parsed, rawText, replyText };
+    },
+  })
+);
+
+const routingDecisionSchema = z.object({
+  workflowId: z.enum(ROUTING_WORKFLOWS),
+  reason: z.string(),
+});
+
+type RoutingDecision = z.infer<typeof routingDecisionSchema>;
+
+const normalizeRoutingDecision = (payload: any): RoutingDecision => {
+  const workflowId = ROUTING_WORKFLOWS.includes(payload?.workflowId)
+    ? payload.workflowId
+    : "local-rag-workflow";
+  const reason =
+    typeof payload?.reason === "string" && payload.reason.trim()
+      ? payload.reason.trim()
+      : "fallback";
+  return { workflowId, reason };
+};
+
+const parseRoutingDecision = (text: string): RoutingDecision => {
+  const payload = extractJsonPayload(text);
+  if (payload) {
+    try {
+      const parsed = JSON.parse(payload);
+      const normalized = normalizeRoutingDecision(parsed);
+      const result = routingDecisionSchema.safeParse(normalized);
+      if (result.success) {
+        return result.data;
+      }
+    } catch (error) {
+      console.warn("[routing-workflow] failed to parse JSON", error);
+    }
+  }
+  return { workflowId: "local-rag-workflow", reason: "fallback" };
+};
+
+const routingWorkflow = createWorkflow(
+  {
+    id: "routing-workflow",
+    name: "Routing Workflow",
+    purpose: "Route user input to the correct workflow.",
+    input: z.object({
+      query: z.string().min(1),
+      options: z
+        .object({
+          userId: z.string().optional(),
+          conversationId: z.string().optional(),
+          enableThinking: z.boolean().optional(),
+        })
+        .optional(),
+    }),
+    result: routingDecisionSchema,
+  },
+  andThen({
+    id: "routing-run",
+    name: "路由判断",
+    purpose: "Choose a workflow id for the user request.",
+    inputSchema: z.object({
+      query: z.string().min(1),
+      options: z
+        .object({
+          userId: z.string().optional(),
+          conversationId: z.string().optional(),
+          enableThinking: z.boolean().optional(),
+        })
+        .optional(),
+    }),
+    outputSchema: routingDecisionSchema,
+    execute: async ({ data }) => {
+      const enableThinking =
+        typeof data.options?.enableThinking === "boolean"
+          ? data.options.enableThinking
+          : undefined;
+      const requestHeaders =
+        provider === "qwen" && enableThinking !== undefined
+          ? { "x-qwen-enable-thinking": String(enableThinking) }
+          : undefined;
+      const promptSections = [
+        "You are a routing agent. Choose the best workflow id for the user request.",
+        "Allowed workflow ids:",
+        ...ROUTING_WORKFLOWS.map((workflow) => `- ${workflow}`),
+        "Return JSON only.",
+        JSON.stringify(
+          {
+            workflowId: ROUTING_WORKFLOWS.join(" | "),
+            reason: "short reason",
+          },
+          null,
+          2
+        ),
+        `User Message:\n${data.query}`,
+      ];
+      const prompt = promptSections.join("\n\n");
+      const llmResult = await routingAgent.generateText(prompt, {
+        userId: data.options?.userId,
+        conversationId: data.options?.conversationId,
+        headers: requestHeaders,
+        context: buildToolCallContext("llm"),
+      });
+      const rawText =
+        typeof llmResult.text === "string" ? llmResult.text : "";
+      return parseRoutingDecision(rawText);
+    },
+  })
+);
+
 /*
  * 对外导出的 Engine 组件：
  * - agent: 核心对话 Agent（含工具与 Guardrails）
  * - workflows: 可被 VoltAgent 服务注册的 workflow 集合
  * - localRagWorkflow: 直接暴露单个本地 RAG workflow，便于定向调用
  */
-export { agent, localRagWorkflow };
+export { agent, localRagWorkflow, returnWorkflow, routingWorkflow };
 
 export const workflows = {
   localRagWorkflow,
+  returnWorkflow,
+  routingWorkflow,
 };

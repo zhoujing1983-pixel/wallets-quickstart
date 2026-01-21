@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { getPgPool } from "@/agent/db/pg";
 import type {
   VectorMatch,
   VectorRecord,
@@ -19,16 +20,21 @@ export class PgVectorStore
 {
   // 连接池实例（延迟创建）。
   private pool: Pool | null = null;
-  // Postgres 连接字符串。
-  private readonly connectionString: string;
+  // Postgres 连接字符串（仅自定义连接时使用）。
+  private readonly connectionString: string | null;
 
   constructor(connectionString?: string) {
+    const trimmed = connectionString?.trim();
+    if (trimmed) {
+      this.connectionString = trimmed;
+      return;
+    }
     const envUrl =
       process.env.PGVECTOR_URL ?? process.env.DATABASE_URL ?? "";
-    this.connectionString = connectionString ?? envUrl;
-    if (!this.connectionString) {
+    if (!envUrl) {
       throw new Error("Missing PGVECTOR_URL or DATABASE_URL for PgVectorStore.");
     }
+    this.connectionString = null;
   }
 
   /*
@@ -37,10 +43,13 @@ export class PgVectorStore
    * - 统一在 init/query/upsert 时复用。
    */
   private getPool(): Pool {
-    if (!this.pool) {
-      this.pool = new Pool({ connectionString: this.connectionString });
+    if (this.connectionString) {
+      if (!this.pool) {
+        this.pool = new Pool({ connectionString: this.connectionString });
+      }
+      return this.pool;
     }
-    return this.pool;
+    return getPgPool();
   }
 
   /*
