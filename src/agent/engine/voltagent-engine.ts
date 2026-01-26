@@ -1,3 +1,10 @@
+/*
+ * VoltAgent Engine 总览：
+ * - 负责初始化模型 Provider、工具、Memory、以及路由/业务 Workflow；
+ * - 通过一层 fetch 包装实现日志与脱敏，统一采集 LLM 请求/响应；
+ * - 通过 hooks 与 guardrail 处理 reasoning 注入/清洗与输出；
+ * - 最终导出 agent 与 workflows 供服务注册与调用。
+ */
 // 这是新的 Agent Engine 入口：集中管理模型、工具、workflow 与钩子。
 import {
   Agent,
@@ -40,11 +47,15 @@ const fetchWebsiteTool = tool({
   description:
     "Fetch raw text content from a URL for summarization or analysis.",
   parameters: z.object({
+    // 目标网页地址。
     url: z.string().url(),
+    // 最大返回字符数（可选，默认 10000）。
     maxChars: z.number().int().positive().max(20000).optional(),
   }),
   outputSchema: z.object({
+    // 原始请求 URL。
     url: z.string().url(),
+    // 提取后的文本内容（可能已截断）。
     content: z.string(),
   }),
   execute: async ({ url, maxChars = 10000 }) => {
@@ -145,6 +156,7 @@ const stripNoThinkFromText = (text: string) =>
 const stripNoThinkFromValue = (value: unknown): unknown => {
   const seen = new WeakSet<object>();
   const maxDepth = 50;
+  // 递归遍历节点，按类型处理字符串/数组/对象。
   const walk = (node: unknown, depth: number): unknown => {
     if (typeof node === "string") {
       return stripNoThinkFromText(node);
@@ -199,7 +211,7 @@ const wrapMemoryMethod = (name: string) => {
 wrapMemoryMethod("addMessage");
 wrapMemoryMethod("saveMessage");
 
-// Convert a secret into a short masked string.
+// 将敏感字符串转为短掩码，避免日志泄露完整密钥。
 const maskSecret = (value: unknown) => {
   if (typeof value === "string" && value.length > 6) {
     return `${value.slice(0, 3)}***${value.slice(-3)}`;
@@ -207,7 +219,7 @@ const maskSecret = (value: unknown) => {
   return "***";
 };
 
-// Recursively redact secret-like fields in payloads.
+// 递归脱敏 payload 中疑似敏感字段（key/token/authorization 等）。
 const redactSensitive = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map((item) => redactSensitive(item));
@@ -226,7 +238,7 @@ const redactSensitive = (value: unknown): unknown => {
   return value;
 };
 
-// Redact secrets in URL query params.
+// 脱敏 URL query 参数中的敏感字段。
 const redactUrl = (rawUrl: string) => {
   try {
     const parsed = new URL(rawUrl);
@@ -287,6 +299,7 @@ const extractReasoningText = (output: unknown) => {
     return record.reasoning.trim();
   }
 
+  // 统一从 message 上提取 reasoning 字段。
   const normalizeMessage = (
     message: Record<string, unknown> | undefined,
   ): string | undefined => {
@@ -339,6 +352,7 @@ const extractReasoningText = (output: unknown) => {
   return undefined;
 };
 
+// 缓存 Qwen 最近一次的 reasoning（用于最终输出兜底）。
 let lastQwenReasoning: string | undefined;
 
 // 将 reasoning 以 <reason> 包裹并拼接到最终文本。
@@ -428,12 +442,14 @@ const parseBooleanEnv = (value: string | undefined) => {
   return undefined;
 };
 
+// 是否将 reasoning 持久化到 Memory（默认 false）。
 const shouldStoreReasoningInMemory =
   parseBooleanEnv(process.env.VOLTAGENT_SAVE_REASONING_TO_MEMORY) ?? false;
 
 // 清理 <think>/<reason> 标签，避免泄露推理细节。
 const THINK_TAG_REGEX =
   /<\s*(?:think|reason)[^>]*>[\s\S]*?<\/\s*(?:think|reason)\s*>/gi;
+// 移除文本中的 think/reason 标签。
 const stripThinkTags = (text: string) =>
   text.replace(THINK_TAG_REGEX, "").trim();
 
@@ -515,6 +531,7 @@ const withReasonMessage = (
   };
 };
 
+// saveMessageWithContext 的参数类型别名，便于复用签名。
 type SaveMessageWithContextArgs = Parameters<
   typeof memory.saveMessageWithContext
 >;
@@ -602,7 +619,7 @@ const logFinalOutput = (output: unknown) => {
   }
 };
 
-// Print a redacted LLM request payload to logs.
+// 输出 LLM 请求日志（含脱敏 payload）。
 const logLLMRequest = (
   label: string,
   input: RequestInfo | URL,
@@ -616,7 +633,7 @@ const logLLMRequest = (
   console.dir(entry, { depth: null });
 };
 
-// 打印 LLM 响应的关键字段（含 usage 与 reasoning）。
+// 打印 LLM 响应关键字段（含 usage 与 reasoning）。
 const logLLMResponse = async (label: string, response: Response) => {
   try {
     const cloned = response.clone();
@@ -725,7 +742,7 @@ const createLoggedFetch = (
   };
 };
 
-// Rewrite "developer" role to "system" for providers that expect it.
+// 将 OpenAI “developer” 角色改写为 “system”（兼容部分 provider）。
 const rewriteDeveloperRole = (body: string) => {
   const payload = JSON.parse(body);
   if (!Array.isArray(payload?.messages)) {
@@ -856,11 +873,11 @@ const parseOptionalNumber = (value: string | undefined) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-// LM Studio 是否强制追加 /no_think。
+// 是否在 LM Studio 下强制追加 /no_think。
 const lmStudioNoThink =
   (process.env.LM_STUDIO_NO_THINK ?? "").toLowerCase() === "true";
 
-// OpenAI-compatible provider for local Ollama.
+// Ollama（本地）OpenAI 兼容 Provider。
 const ollamaProvider = createOpenAI({
   // Ollama's OpenAI-compatible endpoint.
   baseURL: "http://localhost:11434/v1",
@@ -868,7 +885,7 @@ const ollamaProvider = createOpenAI({
   fetch: createLoggedFetch("openai"),
 });
 
-// OpenAI-compatible provider for local LM Studio.
+// LM Studio（本地）OpenAI 兼容 Provider。
 const lmStudioProvider = createOpenAI({
   baseURL: "http://127.0.0.1:1234/v1",
   apiKey: "lmstudio",
@@ -878,7 +895,7 @@ const lmStudioProvider = createOpenAI({
   }),
 });
 
-// Qwen provider using OpenAI-compatible API.
+// Qwen（通义）OpenAI 兼容 Provider。
 const qwenProvider = createOpenAI({
   baseURL:
     process.env.QWEN_BASE_URL ??
@@ -897,13 +914,13 @@ const qwenProvider = createOpenAI({
   ),
 });
 
-// Google provider using the AI SDK wrapper.
+// Google Generative AI Provider。
 const googleProvider = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   fetch: createLoggedFetch("google"),
 });
 
-// Agent instructions pulled from environment.
+// 从环境变量读取 Agent 的系统指令。
 const instructions = process.env.VOLTAGENT_INSTRUCTIONS?.trim();
 
 if (!instructions) {
@@ -913,12 +930,14 @@ if (!instructions) {
   console.log(instructions);
 }
 
-// Selected model provider from environment.
+// 从环境变量读取模型 Provider 与相关参数。
 const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
+// LM Studio 温度与最大输出 token 参数。
 const lmStudioTemperature = parseOptionalNumber(
   process.env.LM_STUDIO_TEMPERATURE,
 );
 const lmStudioMaxTokens = parseOptionalNumber(process.env.LM_STUDIO_MAX_TOKENS);
+// 将最大 token 过滤为合法值（>=1）。
 const lmStudioMaxOutputTokens =
   lmStudioMaxTokens !== undefined && lmStudioMaxTokens >= 1
     ? lmStudioMaxTokens
@@ -935,7 +954,7 @@ if (
   throw new Error("Missing QWEN_API_KEY or DASHSCOPE_API_KEY in .env");
 }
 
-// Model selection based on provider.
+// 根据 provider 选择模型实例。
 const model =
   provider === "google"
     ? googleProvider(process.env.GOOGLE_MODEL ?? "gemini-1.5-flash")
@@ -945,8 +964,9 @@ const model =
         ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
         : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
 
-// Main agent instance with tools and hooks.
+// Agent 工具集合（会被动态策略过滤）。
 const agentTools = [fetchWebsiteTool, localRagTool];
+// 主 Agent 实例：挂载工具、Memory、Guardrails 与 hooks。
 const agent = new Agent({
   name: "FinyxWaaSAgent",
   instructions,
@@ -1003,7 +1023,7 @@ const agent = new Agent({
   },
 });
 
-// Routing-only agent: minimal prompt and deterministic output.
+// 路由专用 Agent：仅用于 workflow 选择，输出尽量确定。
 const routingAgent = createRoutingAgent(model);
 
 /*
@@ -1020,25 +1040,36 @@ const localRagWorkflow = createWorkflow(
     name: "Local RAG Workflow",
     purpose: "Run local RAG retrieval and optionally fall back to LLM.",
     input: z.object({
+      // 用户查询内容。
       query: z.string().min(1),
       options: z
         .object({
+          // RAG 模式（rag 或 llm）。
           ragMode: z.enum(["rag", "llm"]).optional(),
+          // 用户标识（用于记忆/上下文）。
           userId: z.string().optional(),
+          // 会话标识（用于连续对话）。
           conversationId: z.string().optional(),
+          // 是否启用模型推理（Qwen 可用）。
           enableThinking: z.boolean().optional(),
         })
         .optional(),
     }),
     result: z.object({
+      // 最终回答文本。
       text: z.string(),
+      // 参考来源列表。
       sources: z.array(
         z.object({
+          // 来源标题。
           title: z.string(),
+          // 来源 URL（可选）。
           url: z.string().optional(),
         }),
       ),
+      // 召回打分（可为空）。
       score: z.number().nullable(),
+      // 向量距离（可为空）。
       distance: z.number().nullable(),
     }),
   },
@@ -1047,29 +1078,41 @@ const localRagWorkflow = createWorkflow(
     name: "本地RAG检索与回退",
     purpose: "优先本地RAG，必要时回退到Agent生成。",
     inputSchema: z.object({
+      // 用户查询内容。
       query: z.string().min(1),
       options: z
         .object({
+          // RAG 模式（rag 或 llm）。
           ragMode: z.enum(["rag", "llm"]).optional(),
+          // 用户标识（用于记忆/上下文）。
           userId: z.string().optional(),
+          // 会话标识（用于连续对话）。
           conversationId: z.string().optional(),
+          // 是否启用模型推理（Qwen 可用）。
           enableThinking: z.boolean().optional(),
         })
         .optional(),
     }),
     outputSchema: z.object({
+      // 最终回答文本。
       text: z.string(),
+      // 参考来源列表。
       sources: z.array(
         z.object({
+          // 来源标题。
           title: z.string(),
+          // 来源 URL（可选）。
           url: z.string().optional(),
         }),
       ),
+      // 召回打分（可为空）。
       score: z.number().nullable(),
+      // 向量距离（可为空）。
       distance: z.number().nullable(),
     }),
     execute: async ({ data }) => {
       const skillContextPrefix = await buildSkillContextPrefix(data.query);
+      // 组合用户问题与技能上下文。
       const buildUserPrompt = (query: string) =>
         skillContextPrefix
           ? `${skillContextPrefix}\n\nUser Question:\n${query}`
@@ -1258,13 +1301,16 @@ const localRagWorkflow = createWorkflow(
             };
           }
           // 未命中就让 LLM 直接思考回答。
-          const llmResult = await agent.generateText(buildUserPrompt(data.query), {
-            userId: data.options?.userId,
-            conversationId: data.options?.conversationId,
-            headers: requestHeaders,
-            // 注入 ragMode 到上下文，用于动态工具策略判断。
-            context: buildToolCallContext(ragMode),
-          });
+          const llmResult = await agent.generateText(
+            buildUserPrompt(data.query),
+            {
+              userId: data.options?.userId,
+              conversationId: data.options?.conversationId,
+              headers: requestHeaders,
+              // 注入 ragMode 到上下文，用于动态工具策略判断。
+              context: buildToolCallContext(ragMode),
+            },
+          );
           const text =
             typeof llmResult.text === "string" && llmResult.text.trim()
               ? llmResult.text
@@ -1304,25 +1350,39 @@ const localRagWorkflow = createWorkflow(
   }),
 );
 
-
+// 退货请求结构化 JSON schema。
 const returnCaseSchema = z.object({
+  // 退货请求是否满足条件。
   decision: z.enum(["eligible", "ineligible", "needs_info"]),
+  // 当前缺失的字段列表。
   missingFields: z.array(z.string()),
+  // 下一步处理建议。
   nextSteps: z.array(z.string()),
+  // 简要摘要。
   summary: z.string(),
+  // 结构化用户请求信息。
   request: z.object({
+    // 订单号（可选）。
     orderId: z.string().optional(),
+    // 联系方式（可选）。
     contact: z.string().optional(),
+    // 退货商品信息（可选）。
     items: z.string().optional(),
+    // 购买日期（可选）。
     purchaseDate: z.string().optional(),
+    // 退货原因（可选）。
     reason: z.string().optional(),
+    // 商品状态/成色（可选）。
     condition: z.string().optional(),
+    // 期望处理方式（可选）。
     preferredResolution: z.string().optional(),
   }),
 });
 
+// 退货 case 的类型定义。
 type ReturnCase = z.infer<typeof returnCaseSchema>;
 
+// 将未知数组输入规范化为 string[]。
 const coerceStringArray = (value: unknown) =>
   Array.isArray(value)
     ? value
@@ -1330,6 +1390,7 @@ const coerceStringArray = (value: unknown) =>
         .filter(Boolean)
     : [];
 
+// 将模型输出归一化为 ReturnCase 结构。
 const normalizeReturnCase = (payload: any): ReturnCase => {
   const decision =
     payload?.decision === "eligible" ||
@@ -1375,6 +1436,7 @@ const normalizeReturnCase = (payload: any): ReturnCase => {
   };
 };
 
+// 从文本中提取 JSON 段（支持 fenced code 或最外层花括号）。
 const extractJsonPayload = (text: string) => {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced && fenced[1]) {
@@ -1388,6 +1450,7 @@ const extractJsonPayload = (text: string) => {
   return null;
 };
 
+// 解析并校验 ReturnCase；失败时返回兜底结构。
 const parseReturnCase = (text: string): ReturnCase => {
   const payload = extractJsonPayload(text);
   if (payload) {
@@ -1419,25 +1482,34 @@ const parseReturnCase = (text: string): ReturnCase => {
   };
 };
 
+// 退货流程 Workflow（识别并结构化返回请求）。
 const returnWorkflow = createWorkflow(
   {
     id: "return-request-workflow",
     name: "Return Request Workflow",
     purpose: "Route and structure ecommerce return/refund requests.",
     input: z.object({
+      // 用户查询内容。
       query: z.string().min(1),
       options: z
         .object({
+          // 用户标识（用于记忆/上下文）。
           userId: z.string().optional(),
+          // 会话标识（用于连续对话）。
           conversationId: z.string().optional(),
+          // 是否启用模型推理（Qwen 可用）。
           enableThinking: z.boolean().optional(),
+          // RAG 模式（rag 或 llm）。
           ragMode: z.enum(["rag", "llm"]).optional(),
         })
         .optional(),
     }),
     result: z.object({
+      // 结构化退货 case。
       case: returnCaseSchema,
+      // 原始模型输出文本。
       rawText: z.string(),
+      // 面向用户的回复文本。
       replyText: z.string(),
     }),
   },
@@ -1446,19 +1518,27 @@ const returnWorkflow = createWorkflow(
     name: "退货流程",
     purpose: "Analyze a return request and output a structured case.",
     inputSchema: z.object({
+      // 用户查询内容。
       query: z.string().min(1),
       options: z
         .object({
+          // 用户标识（用于记忆/上下文）。
           userId: z.string().optional(),
+          // 会话标识（用于连续对话）。
           conversationId: z.string().optional(),
+          // 是否启用模型推理（Qwen 可用）。
           enableThinking: z.boolean().optional(),
+          // RAG 模式（rag 或 llm）。
           ragMode: z.enum(["rag", "llm"]).optional(),
         })
         .optional(),
     }),
     outputSchema: z.object({
+      // 结构化退货 case。
       case: returnCaseSchema,
+      // 原始模型输出文本。
       rawText: z.string(),
+      // 面向用户的回复文本。
       replyText: z.string(),
     }),
     execute: async ({ data }) => {
@@ -1495,7 +1575,7 @@ const returnWorkflow = createWorkflow(
             },
           },
           null,
-          2
+          2,
         ),
         "Constraints:",
         "- Output only JSON. No markdown or extra text.",
@@ -1509,8 +1589,7 @@ const returnWorkflow = createWorkflow(
         headers: requestHeaders,
         context: buildToolCallContext(ragMode),
       });
-      const rawText =
-        typeof llmResult.text === "string" ? llmResult.text : "";
+      const rawText = typeof llmResult.text === "string" ? llmResult.text : "";
       const parsed = parseReturnCase(rawText);
       const replyPromptSections = [
         skillContextPrefix,
@@ -1539,16 +1618,21 @@ const returnWorkflow = createWorkflow(
       console.log(`${yellow}[return-workflow] replyText${reset}\n${replyText}`);
       return { case: parsed, rawText, replyText };
     },
-  })
+  }),
 );
 
+// 路由决策 JSON schema。
 const routingDecisionSchema = z.object({
+  // 选择的 workflow id。
   workflowId: z.enum(ROUTING_WORKFLOWS),
+  // 选择原因说明。
   reason: z.string(),
 });
 
+// 路由决策类型定义。
 type RoutingDecision = z.infer<typeof routingDecisionSchema>;
 
+// 归一化路由决策，确保 workflowId 在允许范围内。
 const normalizeRoutingDecision = (payload: any): RoutingDecision => {
   const workflowId = ROUTING_WORKFLOWS.includes(payload?.workflowId)
     ? payload.workflowId
@@ -1560,6 +1644,7 @@ const normalizeRoutingDecision = (payload: any): RoutingDecision => {
   return { workflowId, reason };
 };
 
+// 解析路由决策 JSON；失败则回退默认 workflow。
 const parseRoutingDecision = (text: string): RoutingDecision => {
   const payload = extractJsonPayload(text);
   if (payload) {
@@ -1577,17 +1662,22 @@ const parseRoutingDecision = (text: string): RoutingDecision => {
   return { workflowId: "local-rag-workflow", reason: "fallback" };
 };
 
+// 路由 Workflow：决定进入哪个业务流程。
 const routingWorkflow = createWorkflow(
   {
     id: "routing-workflow",
     name: "Routing Workflow",
     purpose: "Route user input to the correct workflow.",
     input: z.object({
+      // 用户查询内容。
       query: z.string().min(1),
       options: z
         .object({
+          // 用户标识（用于记忆/上下文）。
           userId: z.string().optional(),
+          // 会话标识（用于连续对话）。
           conversationId: z.string().optional(),
+          // 是否启用模型推理（Qwen 可用）。
           enableThinking: z.boolean().optional(),
         })
         .optional(),
@@ -1599,11 +1689,15 @@ const routingWorkflow = createWorkflow(
     name: "路由判断",
     purpose: "Choose a workflow id for the user request.",
     inputSchema: z.object({
+      // 用户查询内容。
       query: z.string().min(1),
       options: z
         .object({
+          // 用户标识（用于记忆/上下文）。
           userId: z.string().optional(),
+          // 会话标识（用于连续对话）。
           conversationId: z.string().optional(),
+          // 是否启用模型推理（Qwen 可用）。
           enableThinking: z.boolean().optional(),
         })
         .optional(),
@@ -1629,7 +1723,7 @@ const routingWorkflow = createWorkflow(
             reason: "short reason",
           },
           null,
-          2
+          2,
         ),
         `User Message:\n${data.query}`,
       ];
@@ -1640,11 +1734,10 @@ const routingWorkflow = createWorkflow(
         headers: requestHeaders,
         context: buildToolCallContext("llm"),
       });
-      const rawText =
-        typeof llmResult.text === "string" ? llmResult.text : "";
+      const rawText = typeof llmResult.text === "string" ? llmResult.text : "";
       return parseRoutingDecision(rawText);
     },
-  })
+  }),
 );
 
 /*
