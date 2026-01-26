@@ -35,11 +35,11 @@ const transporter = nodemailer.createTransport({
 const connection = new IORedis(
   withRedisDb(
     process.env.REDIS_URL,
-    getRedisDb(process.env.EMAIL_QUEUE_REDIS_DB)
+    getRedisDb(process.env.EMAIL_QUEUE_REDIS_DB),
   ),
   {
     maxRetriesPerRequest: null,
-  }
+  },
 );
 
 const worker = new Worker<EmailJobData>(
@@ -58,7 +58,7 @@ const worker = new Worker<EmailJobData>(
   {
     connection,
     prefix: EMAIL_QUEUE_PREFIX,
-  }
+  },
 );
 
 worker.on("completed", (job) => {

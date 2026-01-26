@@ -1,9 +1,6 @@
 import { VoltAgent } from "@voltagent/core";
 import { honoServer } from "@voltagent/server-hono";
-import {
-  agent,
-  workflows,
-} from "@/agent/engine/voltagent-engine";
+import { agent, workflows } from "@/agent/engine/voltagent-engine";
 
 /*
  * VoltAgent 服务端入口：

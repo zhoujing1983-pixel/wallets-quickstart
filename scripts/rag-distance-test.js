@@ -16,7 +16,7 @@ insert.run(JSON.stringify([-1, 0])); // rowid 4
 const query = [1, 0];
 const rows = db
   .prepare(
-    "SELECT rowid, distance FROM v WHERE embedding MATCH ? AND k = ? ORDER BY distance"
+    "SELECT rowid, distance FROM v WHERE embedding MATCH ? AND k = ? ORDER BY distance",
   )
   .all(JSON.stringify(query), 4);
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n web,worker,agent -c blue,magenta,cyan \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\"",
+    "dev": "concurrently -k -n web,worker,agent,ngrok -c blue,magenta,cyan,green \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\" \"npm run ngrok\"",
     "dev:all": "npm run docker:up && npm run dev",
     "build": "next build",
     "start": "next start",
@@ -18,7 +18,8 @@
     "agent:openai": "tsx scripts/voltagentopenai.ts",
     "agent:openai:local": "tsx scripts/voltagentopenai.ts --local",
     "treasure:wallet": "tsx scripts/treasureWallet.ts",
-    "email:worker": "tsx scripts/email-worker.ts"
+    "email:worker": "tsx scripts/email-worker.ts",
+    "ngrok": "ngrok http 3000"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.5",
