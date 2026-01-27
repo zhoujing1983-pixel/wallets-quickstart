@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n web,worker,agent,ngrok -c blue,magenta,cyan,green \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\" \"npm run ngrok\"",
+    "dev": "concurrently -k -n web,worker,agent,ngrok -c blue,magenta,cyan,green \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\" ",
     "dev:all": "npm run docker:up && npm run dev",
     "build": "next build",
     "start": "next start",
