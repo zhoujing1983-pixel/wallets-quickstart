@@ -1,4 +1,7 @@
-import { RETURN_KEYWORDS } from "@/agent/routing/routing-config";
+import {
+  FLIGHT_KEYWORDS,
+  RETURN_KEYWORDS,
+} from "@/agent/routing/routing-config";
 
 type RouteDecision = {
   workflowId: string;
@@ -10,15 +13,25 @@ const normalize = (value: string) => value.toLowerCase();
 
 export const matchKeywordRoute = (input: string): RouteDecision | null => {
   const normalized = normalize(input);
-  const matched = RETURN_KEYWORDS.find((keyword) =>
+  const flightMatched = FLIGHT_KEYWORDS.find((keyword) =>
     normalized.includes(normalize(keyword))
   );
-  if (!matched) {
-    return null;
+  if (flightMatched) {
+    return {
+      workflowId: "flight-booking-workflow",
+      reason: `keyword:${flightMatched}`,
+      source: "keyword",
+    };
   }
-  return {
-    workflowId: "return-request-workflow",
-    reason: `keyword:${matched}`,
-    source: "keyword",
-  };
+  const returnMatched = RETURN_KEYWORDS.find((keyword) =>
+    normalized.includes(normalize(keyword))
+  );
+  if (returnMatched) {
+    return {
+      workflowId: "return-request-workflow",
+      reason: `keyword:${returnMatched}`,
+      source: "keyword",
+    };
+  }
+  return null;
 };

@@ -1,8 +1,10 @@
 import { matchKeywordRoute } from "@/agent/routing/route-selector";
 import { formatReturnWorkflowResult } from "@/agent/routing/formatters/return-workflow";
+import { formatFlightWorkflowResult } from "@/agent/routing/formatters/flight-workflow";
 
 type ChatOptions = {
-  ragMode?: string;
+  needRag?: boolean;
+  useLlmSummary?: boolean;
   userId?: string;
   conversationId?: string;
   enableThinking?: boolean;
@@ -18,7 +20,8 @@ type WorkflowPayload = {
   input: {
     query: string;
     options: {
-      ragMode: "rag" | "llm";
+      needRag: boolean;
+      useLlmSummary?: boolean;
       userId?: string;
       conversationId?: string;
       enableThinking?: boolean;
@@ -51,7 +54,14 @@ const buildWorkflowInput = (
   options: ChatOptions | undefined,
   headerEnableThinking: boolean | undefined
 ): WorkflowPayload => {
-  const ragMode = options?.ragMode === "llm" ? "llm" : "rag";
+  const envNeedRag =
+    (process.env.NEED_RAG ?? "true").toLowerCase() !== "false";
+  const needRag =
+    typeof options?.needRag === "boolean" ? options.needRag : envNeedRag;
+  const useLlmSummary =
+    typeof options?.useLlmSummary === "boolean"
+      ? options.useLlmSummary
+      : undefined;
   const userId = typeof options?.userId === "string" ? options.userId : undefined;
   const conversationId =
     typeof options?.conversationId === "string"
@@ -66,7 +76,8 @@ const buildWorkflowInput = (
     input: {
       query: input,
       options: {
-        ragMode,
+        needRag,
+        useLlmSummary,
         userId,
         conversationId,
         enableThinking,
@@ -161,6 +172,7 @@ export const routeAgentChat = async ({
   const workflowId = await resolveWorkflowId(input, payload);
   logRouting("executing workflow", { workflowId });
   const workflowRes = await executeWorkflow(workflowId, payload);
+  logRouting("workflow raw response", { workflowId, workflowRes });
   const result = workflowRes?.data?.result;
 
   if (!result || typeof result !== "object") {
@@ -176,10 +188,27 @@ export const routeAgentChat = async ({
     });
     return formatted;
   }
+  if (workflowId === "flight-booking-workflow") {
+    const formatted = formatFlightWorkflowResult(result as any);
+    logRouting("response formatted", {
+      workflowId,
+      durationMs: Date.now() - start,
+    });
+    return formatted;
+  }
 
+  const sources = Array.isArray((result as any).sources)
+    ? (result as any).sources
+    : [];
+  const snippets = Array.isArray((result as any).snippets)
+    ? (result as any).snippets
+    : [];
+  const baseText =
+    typeof (result as any).text === "string" ? (result as any).text : "";
   const response = {
-    text: typeof (result as any).text === "string" ? (result as any).text : "",
-    sources: Array.isArray((result as any).sources) ? (result as any).sources : [],
+    text: baseText,
+    sources,
+    snippets,
   };
   logRouting("response ready", {
     workflowId,

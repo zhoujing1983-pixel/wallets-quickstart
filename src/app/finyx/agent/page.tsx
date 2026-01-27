@@ -1267,32 +1267,8 @@ export default function AgentManagementPage() {
                 </div>
               </div>
             ) : (
-              <div className="rounded-3xl border border-slate-200 bg-white px-10 py-10 shadow-sm">
-                <div className="flex flex-col gap-4">
-                  <span className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-                    {activeSection?.label}
-                  </span>
-                  <h1 className="text-3xl font-semibold text-slate-900">
-                    {activeSection?.title}
-                  </h1>
-                  <p className="text-base text-slate-600">
-                    {activeSection?.description}
-                  </p>
-                </div>
-                <div className="mt-8 grid gap-4 md:grid-cols-2">
-                  {activeSection?.bullets.map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600"
-                    >
-                      {item}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-10 rounded-2xl border border-dashed border-slate-200 px-6 py-5 text-sm text-slate-500">
-                  This space is reserved for future management tooling. Connect
-                  metrics, ingestion logs, and audit trails here.
-                </div>
+              <div className="h-[calc(100vh-16rem)]">
+                <AgentChatWidget variant="panel" defaultOpen />
               </div>
             )}
           </main>
@@ -1481,13 +1457,7 @@ export default function AgentManagementPage() {
                 </div>
               </aside>
             </>
-          ) : (
-            <aside className="w-[420px] shrink-0">
-              <div className="sticky top-6 h-[calc(100vh-16rem)]">
-                <AgentChatWidget variant="panel" defaultOpen />
-              </div>
-            </aside>
-          )}
+          ) : null}
         </div>
       </div>
       <style jsx global>{`

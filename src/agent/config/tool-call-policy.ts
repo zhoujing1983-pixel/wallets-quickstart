@@ -21,6 +21,7 @@ type RagMode = "rag" | "llm";
 
 // 上下文里存放 ragMode 的键名，避免与业务字段冲突。
 const TOOL_CALL_RAG_MODE_KEY = "toolCallRagMode";
+const TOOL_CALL_DISABLED_KEY = "toolCallDisabled";
 
 /*
  * 从上下文推断 ragMode：
@@ -55,6 +56,11 @@ export const buildToolCallContext = (ragMode: RagMode) => ({
   [TOOL_CALL_RAG_MODE_KEY]: ragMode,
 });
 
+export const buildToolCallContextWithDisabled = (ragMode: RagMode) => ({
+  [TOOL_CALL_RAG_MODE_KEY]: ragMode,
+  [TOOL_CALL_DISABLED_KEY]: true,
+});
+
 /*
  * 根据 ragMode 过滤工具列表：
  * - 没有上下文时保持原工具列表；
@@ -67,6 +73,17 @@ export const resolveToolCallTools = <T>(
   // 默认没有上下文时保持原行为，避免影响其他调用路径。
   if (!context) {
     return tools;
+  }
+  if (context.get(TOOL_CALL_DISABLED_KEY) === true) {
+    if (tools.length > 0) {
+      const yellow = "\u001b[33m";
+      const reset = "\u001b[0m";
+      console.log(
+        `${yellow}[tool-policy] 工具已被上下文禁用${reset}`,
+        JSON.stringify({ policy: "context-disabled" })
+      );
+    }
+    return [];
   }
   const ragMode = resolveRagMode(context);
   if (!shouldAllowTools(ragMode)) {

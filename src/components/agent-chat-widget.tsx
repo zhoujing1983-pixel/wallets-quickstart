@@ -8,12 +8,57 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  offers?: OfferSummary[];
+  snippets?: RagSnippet[];
+  sources?: RagSource[];
 };
 
 type AgentChatWidgetProps = {
   variant?: "floating" | "panel";
   defaultOpen?: boolean;
 };
+
+type OfferSummary = {
+  id?: string;
+  total_amount?: string;
+  total_currency?: string;
+  slices?: OfferSlice[];
+};
+
+type OfferSlice = {
+  segments?: OfferSegment[];
+};
+
+type OfferSegment = {
+  marketing_carrier?: string | { name?: string } | null;
+  operating_carrier?: string | { name?: string } | null;
+  flight_number?: string | null;
+  departing_at?: string | null;
+  arriving_at?: string | null;
+};
+
+type RagSnippet = {
+  title?: string;
+  url?: string;
+  content?: string;
+};
+
+type RagSource = {
+  title?: string;
+  url?: string;
+};
+
+const normalizeCarrier = (value: unknown) => {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.name === "string") {
+      return { name: record.name };
+    }
+  }
+  return null;
+};
+
 
 // 生成用于消息与会话的唯一 ID。
 const createId = () =>
@@ -48,19 +93,185 @@ const splitThinkContent = (content: string) => {
   };
 };
 
+const extractOffers = (payload: unknown): OfferSummary[] => {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const record = item as Record<string, unknown>;
+      const slices = Array.isArray(record.slices)
+        ? record.slices.map((slice) => {
+            const sliceRecord = slice as Record<string, unknown>;
+            const segments = Array.isArray(sliceRecord.segments)
+              ? sliceRecord.segments.map((segment) => {
+                const segmentRecord = segment as Record<string, unknown>;
+                  return {
+                    marketing_carrier: normalizeCarrier(
+                      segmentRecord.marketing_carrier
+                    ),
+                    operating_carrier: normalizeCarrier(
+                      segmentRecord.operating_carrier
+                    ),
+                    flight_number:
+                      typeof segmentRecord.flight_number === "string"
+                        ? segmentRecord.flight_number
+                        : null,
+                    departing_at:
+                      typeof segmentRecord.departing_at === "string"
+                        ? segmentRecord.departing_at
+                        : null,
+                    arriving_at:
+                      typeof segmentRecord.arriving_at === "string"
+                        ? segmentRecord.arriving_at
+                        : null,
+                  };
+                })
+              : [];
+            return { segments };
+          })
+        : [];
+      return {
+        id: typeof record.id === "string" ? record.id : "",
+        total_amount:
+          typeof record.total_amount === "string"
+            ? record.total_amount
+            : typeof record.total_amount === "number"
+              ? String(record.total_amount)
+              : "",
+        total_currency:
+          typeof record.total_currency === "string"
+            ? record.total_currency
+            : typeof record.total_currency === "number"
+              ? String(record.total_currency)
+              : "",
+        slices,
+      };
+    })
+    .filter((offer) => offer.id || offer.total_amount || offer.total_currency);
+};
+
+const getCarrierLabel = (segment?: OfferSegment) => {
+  if (!segment) return "待确认";
+  const carrier =
+    segment.operating_carrier ?? segment.marketing_carrier ?? "待确认";
+  if (typeof carrier === "string") return carrier;
+  if (carrier && typeof carrier === "object" && "name" in carrier) {
+    return typeof carrier.name === "string" && carrier.name.trim()
+      ? carrier.name
+      : "待确认";
+  }
+  return "待确认";
+};
+
+const getFlightNumber = (segment?: OfferSegment) =>
+  segment?.flight_number ?? "待确认";
+
+const renderAnswerWithSnippets = (text: string, snippets?: RagSnippet[]) => {
+  if (!text) return null;
+  const parts = text.split(/(\[\d+\])/g);
+  return parts.map((part, index) => {
+    const match = part.match(/^\[(\d+)\]$/);
+    if (!match) {
+      return <span key={`text-${index}`}>{part}</span>;
+    }
+    const snippetIndex = Number(match[1]) - 1;
+    const snippet = snippets?.[snippetIndex];
+    const title =
+      typeof snippet?.title === "string" && snippet.title.trim()
+        ? snippet.title.trim()
+        : "来源片段";
+    const content =
+      typeof snippet?.content === "string" && snippet.content.trim()
+        ? snippet.content.trim()
+        : "暂无可用片段内容。";
+    const tooltip = `${title}\n${content}`;
+    return (
+      <span
+        key={`cite-${index}`}
+        className="cursor-help text-slate-700 underline decoration-dotted"
+        title={tooltip}
+      >
+        {part}
+      </span>
+    );
+  });
+};
+
+const renderSourcesList = (
+  sources: RagSource[] | undefined,
+  snippets?: RagSnippet[]
+) => {
+  const hasSnippets = Array.isArray(snippets) && snippets.length > 0;
+  const hasSources = Array.isArray(sources) && sources.length > 0;
+  if (!hasSnippets && !hasSources) return null;
+  const items = hasSnippets ? snippets : sources ?? [];
+  const entries = items.map((item, index) => {
+    const title =
+      typeof (item as RagSnippet).title === "string" &&
+      (item as RagSnippet).title?.trim()
+        ? (item as RagSnippet).title!.trim()
+        : typeof (item as RagSource).title === "string" &&
+            (item as RagSource).title?.trim()
+          ? (item as RagSource).title!.trim()
+          : "未知来源";
+    const content =
+      hasSnippets &&
+      typeof (item as RagSnippet).content === "string" &&
+      (item as RagSnippet).content?.trim()
+        ? (item as RagSnippet).content!.trim()
+        : "暂无可用片段内容。";
+    const chunk = index + 1;
+    const hasChunkLabel = /\(chunk\s*\d+\)|（chunk\s*\d+）|（切片\s*\d+）/i.test(
+      title
+    );
+    return {
+      title,
+      chunk,
+      content,
+      hasChunkLabel,
+    };
+  });
+  return (
+    <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-semibold text-slate-700">来源：</span>
+        {entries.map((entry) => (
+          <span
+            key={`${entry.title}-${entry.chunk}`}
+            className="relative cursor-help text-slate-500 underline decoration-dotted group"
+          >
+            {entry.hasChunkLabel
+              ? entry.title
+              : `${entry.title}（chunk ${entry.chunk}）`}
+            <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 rounded-lg bg-slate-900 px-3 py-2 text-[11px] leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+              <span className="block font-semibold">{entry.title}</span>
+              <span className="mt-1 block text-slate-100">
+                {entry.content}
+              </span>
+            </span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
 export function AgentChatWidget({
   variant = "floating",
   defaultOpen = false,
 }: AgentChatWidgetProps) {
   // 根据渲染模式决定布局与初始化状态。
   const isPanel = variant === "panel";
-  const [isOpen, setIsOpen] = useState(isPanel || defaultOpen);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
-  const [useLlmDirectly, setUseLlmDirectly] = useState(false);
+  const [useLlmSummary, setUseLlmSummary] = useState(false);
   const [useThink, setUseThink] = useState(false);
   const [supportsThink, setSupportsThink] = useState(false);
   const [provider, setProvider] = useState("ollama");
@@ -97,10 +308,12 @@ export function AgentChatWidget({
     userIdRef.current = getOrCreateId("finyx-agent-user-id");
     conversationIdRef.current = getOrCreateId("finyx-agent-conversation-id");
     const stored = window.localStorage.getItem("finyx-agent-chat");
-    const ragMode = window.localStorage.getItem("finyx-agent-rag-mode");
+    const summaryMode = window.localStorage.getItem(
+      "finyx-agent-llm-summary"
+    );
     const thinkMode = window.localStorage.getItem("finyx-agent-think-mode");
-    if (ragMode === "llm") {
-      setUseLlmDirectly(true);
+    if (summaryMode === "on") {
+      setUseLlmSummary(true);
     }
     if (stored) {
       try {
@@ -190,8 +403,8 @@ export function AgentChatWidget({
   }, [messages, isOpen]);
 
   // 发送用户输入并追加机器人回复。
-  const sendMessage = async () => {
-    const prompt = input.trim();
+  const sendMessage = async (overridePrompt?: string) => {
+    const prompt = (overridePrompt ?? input).trim();
     if (!prompt || isSending) return;
     const requestPrompt =
       provider === "lmstudio" &&
@@ -200,7 +413,9 @@ export function AgentChatWidget({
       !prompt.includes("/no_think")
         ? `${prompt} /no_think`
         : prompt;
-    setInput("");
+    if (!overridePrompt) {
+      setInput("");
+    }
     const userMessage: ChatMessage = {
       id: createId(),
       role: "user",
@@ -218,7 +433,7 @@ export function AgentChatWidget({
           options: {
             userId: userIdRef.current,
             conversationId: conversationIdRef.current,
-            ragMode: useLlmDirectly ? "llm" : "rag",
+            useLlmSummary,
             enableThinking: provider === "qwen" ? useThink : undefined,
           },
         }),
@@ -231,6 +446,13 @@ export function AgentChatWidget({
         typeof data?.data?.text === "string" && data.data.text.trim().length > 0
           ? data.data.text
           : "I did not get a response. Please try again.";
+      const offers = extractOffers(data?.data?.offers);
+      const snippets = Array.isArray(data?.data?.snippets)
+        ? (data.data.snippets as RagSnippet[])
+        : undefined;
+      const sources = Array.isArray(data?.data?.sources)
+        ? (data.data.sources as RagSource[])
+        : undefined;
       setMessages((prev) => [
         ...prev,
         {
@@ -238,6 +460,9 @@ export function AgentChatWidget({
           role: "assistant",
           content: replyText,
           timestamp: createTimestamp(),
+          offers: offers.length > 0 ? offers : undefined,
+          snippets,
+          sources,
         },
       ]);
     } catch (error) {
@@ -255,6 +480,11 @@ export function AgentChatWidget({
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleOfferDetail = (offerId?: string) => {
+    if (!offerId) return;
+    sendMessage(offerId);
   };
 
   // 清空聊天记录并重置会话 ID。
@@ -292,13 +522,13 @@ export function AgentChatWidget({
   };
 
   // 切换 RAG/LLM 模式并持久化设置。
-  const toggleRagMode = () => {
-    setUseLlmDirectly((prev) => {
+  const toggleLlmSummary = () => {
+    setUseLlmSummary((prev) => {
       const next = !prev;
       if (typeof window !== "undefined") {
         window.localStorage.setItem(
-          "finyx-agent-rag-mode",
-          next ? "llm" : "rag"
+          "finyx-agent-llm-summary",
+          next ? "on" : "off"
         );
       }
       return next;
@@ -414,6 +644,9 @@ export function AgentChatWidget({
                           );
                           const showThink = Boolean(think);
                           const isExpanded = expandedThinks[message.id] ?? false;
+                          const hasOffers =
+                            Array.isArray(message.offers) &&
+                            message.offers.length > 0;
                           return (
                             <>
                               {/* think 模式开关与面板 */}
@@ -435,7 +668,52 @@ export function AgentChatWidget({
                                   {think}
                                 </div>
                               ) : null}
-                              <span>{answer}</span>
+                              {answer
+                                ? renderAnswerWithSnippets(answer, message.snippets)
+                                : null}
+                              {renderSourcesList(
+                                message.sources,
+                                message.snippets
+                              )}
+                              {hasOffers ? (
+                                <div className="mt-3 flex flex-col gap-2">
+                                  {message.offers?.slice(0, 3).map((offer, index) => {
+                                    const firstSegment =
+                                      offer.slices?.[0]?.segments?.[0];
+                                    const carrier = getCarrierLabel(firstSegment);
+                                    const flightNumber = getFlightNumber(firstSegment);
+                                    const price = offer.total_amount || "待确认";
+                                    const currency = offer.total_currency || "待确认";
+                                    return (
+                                      <div
+                                        key={`${offer.id ?? "offer"}-${index}`}
+                                        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-700 shadow-[0_6px_16px_rgba(15,23,42,0.08)]"
+                                      >
+                                        <div className="flex items-center justify-between text-[12px] font-semibold text-slate-800">
+                                          <span>报价 {index + 1}</span>
+                                          <button
+                                            type="button"
+                                            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-[12px] text-slate-600 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                                            onClick={() =>
+                                              handleOfferDetail(offer.id)
+                                            }
+                                            disabled={!offer.id}
+                                            aria-label="查看报价详情"
+                                          >
+                                            &gt;
+                                          </button>
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] text-slate-600">
+                                          <div>航司：{carrier}</div>
+                                          <div>航班号：{flightNumber}</div>
+                                          <div>价格：{price}</div>
+                                          <div>币种：{currency}</div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
                             </>
                           );
                         })()}
@@ -504,7 +782,7 @@ export function AgentChatWidget({
               />
               <button
                 type="button"
-                onClick={sendMessage}
+                onClick={() => void sendMessage()}
                 disabled={!canSend}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white shadow-md transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
@@ -524,18 +802,20 @@ export function AgentChatWidget({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={toggleRagMode}
+                    onClick={toggleLlmSummary}
                     className="relative h-6 w-11 rounded-full border border-slate-200 bg-slate-100 transition"
                   >
                     <span
                       className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
-                        useLlmDirectly
+                        useLlmSummary
                           ? "left-6 bg-slate-900"
                           : "left-1 bg-slate-400"
                       }`}
                     />
                   </button>
-                  <span className="text-[11px] text-slate-500">LLM</span>
+                  <span className="text-[11px] text-slate-500">
+                    LLM Summary
+                  </span>
                 </div>
                 {/* Think 模式开关 */}
                 {supportsThink ? (
@@ -592,7 +872,17 @@ export function AgentChatWidget({
           ) : null}
         </div>
       ) : null}
-      {/* 浮动打开按钮 */}
+      {/* 打开按钮 */}
+      {!isOpen && isPanel ? (
+        <button
+          type="button"
+          aria-label="Open chat"
+          onClick={() => setIsOpen(true)}
+          className="flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+        >
+          打开助手
+        </button>
+      ) : null}
       {!isPanel ? (
         <button
           type="button"

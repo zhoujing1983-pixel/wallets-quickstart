@@ -20,7 +20,8 @@
     "agent:openai:local": "tsx scripts/voltagentopenai.ts --local",
     "treasure:wallet": "tsx scripts/treasureWallet.ts",
     "email:worker": "tsx scripts/email-worker.ts",
-    "ngrok": "ngrok http 3000"
+    "ngrok": "ngrok http 3000",
+    "airports:refresh": "tsx scripts/refresh-airports.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.5",

@@ -9,25 +9,22 @@
 import {
   Agent,
   Memory,
-  tool,
-  createWorkflow,
-  andThen,
   createOutputGuardrail,
 } from "@voltagent/core";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
+import { countTokens } from "gpt-tokenizer";
 import "dotenv/config";
 import { LibSQLMemoryAdapter } from "@voltagent/libsql";
 // 引入本地 RAG 工具与执行函数：用于工具调用与 workflow 步骤。
-import { localRagTool, runLocalRag } from "@/agent/tools/local-rag-tool";
-import { buildSkillContextPrefix } from "@/agent/skills/skill-loader";
-import {
-  buildToolCallContext,
-  resolveToolCallTools,
-} from "@/agent/config/tool-call-policy";
 import { createRoutingAgent } from "@/agent/routing/routing-agent";
-import { ROUTING_WORKFLOWS } from "@/agent/routing/routing-config";
+import {
+  createFlightBookingWorkflow,
+  createLocalRagWorkflow,
+  createReturnWorkflow,
+  createRoutingWorkflow,
+} from "@/agent/engine";
 import type {
   TextUIPart,
   UIDataTypes,
@@ -35,104 +32,6 @@ import type {
   UIMessagePart,
   UITools,
 } from "ai";
-
-/*
- * 网站内容抓取工具：
- * - 用于将网页原文提取为纯文本，便于后续摘要/分析；
- * - 内建超时与重试，避免请求挂死；
- * - 对 HTML 做基础清洗，减少脚本/样式噪声。
- */
-const fetchWebsiteTool = tool({
-  name: "fetch_website_content",
-  description:
-    "Fetch raw text content from a URL for summarization or analysis.",
-  parameters: z.object({
-    // 目标网页地址。
-    url: z.string().url(),
-    // 最大返回字符数（可选，默认 10000）。
-    maxChars: z.number().int().positive().max(20000).optional(),
-  }),
-  outputSchema: z.object({
-    // 原始请求 URL。
-    url: z.string().url(),
-    // 提取后的文本内容（可能已截断）。
-    content: z.string(),
-  }),
-  execute: async ({ url, maxChars = 10000 }) => {
-    console.log("\n[tool:exec] fetch_website_content", { url, maxChars });
-    // Retry limit for network fetches.
-    const maxRetries = 2;
-    // Per-request timeout to avoid hanging.
-    const timeoutMs = 15000;
-    // Capture last error for reporting.
-    let lastError: unknown;
-    // Track the successful response (if any).
-    let response: Response | undefined;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      // Abort controller for per-attempt timeout.
-      const controller = new AbortController();
-      // Timer to cancel the request after timeout.
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        response = await fetch(url, {
-          headers: {
-            "User-Agent": "VoltAgent/1.0",
-          },
-          signal: controller.signal,
-        });
-        break;
-      } catch (error) {
-        lastError = error;
-        console.log("\n[tool:exec] fetch_website_content retry", {
-          attempt,
-          error: String(error),
-        });
-        if (attempt === maxRetries) {
-          break;
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, 500 * (attempt + 1)),
-        );
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    }
-
-    if (!response) {
-      throw new Error(`Failed to fetch ${url}: ${String(lastError)}`);
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch ${url}: ${response.status} ${response.statusText}`,
-      );
-    }
-
-    // Content type for basic HTML stripping.
-    const contentType = response.headers.get("content-type") ?? "";
-    // Raw response text before normalization.
-    const rawText = await response.text();
-    console.log("\n[tool:exec] fetch_website_content response", {
-      contentType,
-      status: response.status,
-    });
-    // Normalized text for the tool output.
-    const content = contentType.includes("text/html")
-      ? rawText
-          .replace(/<script[\s\S]*?<\/script>/gi, " ")
-          .replace(/<style[\s\S]*?<\/style>/gi, " ")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-      : rawText.trim();
-
-    return {
-      url,
-      content: content.slice(0, maxChars),
-    };
-  },
-});
 
 // 对话记忆持久化地址，默认写入本地 sqlite。
 const memoryUrl = process.env.VOLTAGENT_MEMORY_URL ?? "file:./agent-memory.db";
@@ -279,6 +178,47 @@ const buildLogEntry = (input: RequestInfo | URL, init?: RequestInit) => {
     }
   }
   return { url: safeUrl, body: redactSensitive(init.body) };
+};
+
+const extractTextParts = (value: unknown): string[] => {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractTextParts(item));
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.text === "string") {
+      return [record.text];
+    }
+  }
+  return [];
+};
+
+const estimateInputTokens = (rawBody: string) => {
+  try {
+    const payload = JSON.parse(rawBody) as Record<string, unknown>;
+    if (Array.isArray(payload.messages)) {
+      let tokens = 0;
+      for (const message of payload.messages as Array<Record<string, unknown>>) {
+        const parts = extractTextParts(message.content);
+        for (const part of parts) {
+          tokens += countTokens(part);
+        }
+      }
+      return tokens;
+    }
+    if (typeof payload.input === "string") {
+      return countTokens(payload.input);
+    }
+    if (typeof payload.prompt === "string") {
+      return countTokens(payload.prompt);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 };
 
 /*
@@ -629,6 +569,16 @@ const logLLMRequest = (
   if (!entry) {
     return;
   }
+  if (typeof init?.body === "string") {
+    const tokens = estimateInputTokens(init.body);
+    if (typeof tokens === "number") {
+      const yellow = "\u001b[33m";
+      const reset = "\u001b[0m";
+      console.log(`${yellow}[llm:input-tokens] ${label}${reset}`, {
+        tokens,
+      });
+    }
+  }
   console.log(`\n[llm:request] ${label}`);
   console.dir(entry, { depth: null });
 };
@@ -964,8 +914,6 @@ const model =
         ? qwenProvider.chat(process.env.QWEN_MODEL ?? "qwen-plus")
         : ollamaProvider.chat(process.env.OLLAMA_MODEL ?? "llama3.2:1b");
 
-// Agent 工具集合（会被动态策略过滤）。
-const agentTools = [fetchWebsiteTool, localRagTool];
 // 主 Agent 实例：挂载工具、Memory、Guardrails 与 hooks。
 const agent = new Agent({
   name: "FinyxWaaSAgent",
@@ -976,11 +924,10 @@ const agent = new Agent({
   maxOutputTokens:
     provider === "lmstudio" ? lmStudioMaxOutputTokens : undefined,
   /*
-   * 工具列表改为动态解析：
-   * - 通过上下文 ragMode + 策略控制是否允许工具调用；
-   * - 解决“静态工具列表无法被调用时禁用”的问题。
+   * 主 Agent 不挂载任何工具，避免额外 token 与误触发。
+   * 工具仅在各业务 workflow 内部使用。
    */
-  tools: ({ context }) => resolveToolCallTools(context, agentTools),
+  tools: [],
   memory,
   outputGuardrails: [reasoningInjectionGuardrail],
   hooks: {
@@ -994,16 +941,16 @@ const agent = new Agent({
       );
       return { messages: sanitizedMessages };
     },
-    onToolStart: ({ tool, args }) => {
-      console.log("\n[tool:start]", tool.name, args);
-    },
-    onToolEnd: ({ tool, output, error }) => {
-      if (error) {
-        console.log("\n[tool:error]", tool.name, error);
-        return;
-      }
-      console.log("\n[tool:end]", tool.name, output);
-    },
+    // onToolStart: ({ tool, args }) => {
+    //   console.log("\n[tool:start]", tool.name, args);
+    // },
+    // onToolEnd: ({ tool, output, error }) => {
+    //   if (error) {
+    //     console.log("\n[tool:error]", tool.name, error);
+    //     return;
+    //   }
+    //   console.log("\n[tool:end]", tool.name, output);
+    // },
     onStepFinish: ({ step, context: oc }) => {
       try {
         const reasoning =
@@ -1026,719 +973,13 @@ const agent = new Agent({
 // 路由专用 Agent：仅用于 workflow 选择，输出尽量确定。
 const routingAgent = createRoutingAgent(model);
 
-/*
- * 本地 RAG Workflow（带可选 LLM 回退）：
- * - 输入包含 query 与前端传来的 ragMode；
- * - ragMode=rag 时优先走本地 RAG；
- * - hybrid 模式下根据 distance 阈值决定是否回退到 LLM；
- * - ragMode=llm 时直接调用 agent 生成答案；
- * - 输出统一为 { text, sources, score, distance }，便于前端消费。
- */
-const localRagWorkflow = createWorkflow(
-  {
-    id: "local-rag-workflow",
-    name: "Local RAG Workflow",
-    purpose: "Run local RAG retrieval and optionally fall back to LLM.",
-    input: z.object({
-      // 用户查询内容。
-      query: z.string().min(1),
-      options: z
-        .object({
-          // RAG 模式（rag 或 llm）。
-          ragMode: z.enum(["rag", "llm"]).optional(),
-          // 用户标识（用于记忆/上下文）。
-          userId: z.string().optional(),
-          // 会话标识（用于连续对话）。
-          conversationId: z.string().optional(),
-          // 是否启用模型推理（Qwen 可用）。
-          enableThinking: z.boolean().optional(),
-        })
-        .optional(),
-    }),
-    result: z.object({
-      // 最终回答文本。
-      text: z.string(),
-      // 参考来源列表。
-      sources: z.array(
-        z.object({
-          // 来源标题。
-          title: z.string(),
-          // 来源 URL（可选）。
-          url: z.string().optional(),
-        }),
-      ),
-      // 召回打分（可为空）。
-      score: z.number().nullable(),
-      // 向量距离（可为空）。
-      distance: z.number().nullable(),
-    }),
-  },
-  andThen({
-    id: "local-rag-retrieve",
-    name: "本地RAG检索与回退",
-    purpose: "优先本地RAG，必要时回退到Agent生成。",
-    inputSchema: z.object({
-      // 用户查询内容。
-      query: z.string().min(1),
-      options: z
-        .object({
-          // RAG 模式（rag 或 llm）。
-          ragMode: z.enum(["rag", "llm"]).optional(),
-          // 用户标识（用于记忆/上下文）。
-          userId: z.string().optional(),
-          // 会话标识（用于连续对话）。
-          conversationId: z.string().optional(),
-          // 是否启用模型推理（Qwen 可用）。
-          enableThinking: z.boolean().optional(),
-        })
-        .optional(),
-    }),
-    outputSchema: z.object({
-      // 最终回答文本。
-      text: z.string(),
-      // 参考来源列表。
-      sources: z.array(
-        z.object({
-          // 来源标题。
-          title: z.string(),
-          // 来源 URL（可选）。
-          url: z.string().optional(),
-        }),
-      ),
-      // 召回打分（可为空）。
-      score: z.number().nullable(),
-      // 向量距离（可为空）。
-      distance: z.number().nullable(),
-    }),
-    execute: async ({ data }) => {
-      const skillContextPrefix = await buildSkillContextPrefix(data.query);
-      // 组合用户问题与技能上下文。
-      const buildUserPrompt = (query: string) =>
-        skillContextPrefix
-          ? `${skillContextPrefix}\n\nUser Question:\n${query}`
-          : query;
-      const mode = process.env.AGENT_PROXY_MODE ?? "local-rag";
-      const ragMode = data.options?.ragMode === "llm" ? "llm" : "rag";
-      const yellow = "\u001b[33m";
-      const reset = "\u001b[0m";
-      console.log(
-        `${yellow}[rag-flow] 当前分支判断${reset}`,
-        JSON.stringify({ ragMode, proxyMode: mode }),
-      );
-      /*
-       * 本地 RAG + LLM 拼接开关：
-       * - LOCAL_RAG_USE_LLM_SUMMARY 默认开启（除非显式设为 false）；
-       * - 开启时：RAG 命中则作为上下文提示词给 LLM，总结/润色；
-       * - 关闭时：命中就直接返回 RAG 结果，不再走 LLM。
-       */
-      const enableSummary =
-        (process.env.LOCAL_RAG_USE_LLM_SUMMARY ?? "").toLowerCase() !== "false";
-      if (!enableSummary) {
-        console.log(
-          `${yellow}[rag-flow] LLM summary 禁用${reset}`,
-          JSON.stringify({ reason: "LOCAL_RAG_USE_LLM_SUMMARY=false" }),
-        );
-      }
-      /*
-       * 检索阈值：
-       * - 优先使用 RAG_SCORE_THRESHOLD（越大越严格）；
-       * - 若未提供 score 阈值，则回退到 RAG_DISTANCE_THRESHOLD（越小越严格）；
-       * - 兼容旧配置，同时为“统一 score 语义”预留升级路径。
-       */
-      const scoreThresholdRaw = process.env.RAG_SCORE_THRESHOLD;
-      const scoreThreshold = scoreThresholdRaw
-        ? Number(scoreThresholdRaw)
-        : undefined;
-      const distanceThreshold = Number(
-        process.env.RAG_DISTANCE_THRESHOLD ?? 0.35,
-      );
-      const hasScoreThreshold = Number.isFinite(scoreThreshold);
-      /*
-       * enableThinking 处理：
-       * - 与旧流程一致，仅对 Qwen 开关推理能力；
-       * - 通过 providerOptions.headers 传入到请求头中。
-       */
-      const enableThinking =
-        typeof data.options?.enableThinking === "boolean"
-          ? data.options.enableThinking
-          : undefined;
-      const requestHeaders =
-        provider === "qwen" && enableThinking !== undefined
-          ? { "x-qwen-enable-thinking": String(enableThinking) }
-          : undefined;
-      if (ragMode === "rag" && (mode === "local-rag" || mode === "hybrid")) {
-        // 先走本地 RAG，判断是否“找到答案”。
-        const ragResult = await runLocalRag(data.query);
-        const isAnswer =
-          ragResult.text.trim() !== "不知道。" &&
-          (hasScoreThreshold
-            ? ragResult.score !== null &&
-              ragResult.score >= (scoreThreshold as number)
-            : ragResult.distance !== null &&
-              ragResult.distance <= distanceThreshold);
-        console.log(
-          `${yellow}[rag-flow] 本地RAG命中结果${reset}`,
-          JSON.stringify(
-            {
-              hit: isAnswer,
-              score: ragResult.score,
-              distance: ragResult.distance,
-              threshold: hasScoreThreshold
-                ? { score: scoreThreshold }
-                : { distance: distanceThreshold },
-              content: isAnswer ? ragResult.text : undefined,
-              sources: isAnswer ? ragResult.sources : undefined,
-              snippets: isAnswer ? ragResult.snippets : undefined,
-            },
-            null,
-            2,
-          ),
-        );
-        if (!enableSummary && isAnswer) {
-          // 关闭 LLM 拼接时，直接返回本地 RAG 结果。
-          return ragResult;
-        }
-        if (enableSummary) {
-          // 开启 LLM 拼接：有命中就用 RAG 作为上下文提示词。
-          if (isAnswer) {
-            console.log(
-              `${yellow}[rag-flow] 本地RAG召回内容${reset}`,
-              JSON.stringify(
-                {
-                  text: ragResult.text,
-                  snippets: ragResult.snippets,
-                  sources: ragResult.sources,
-                  score: ragResult.score,
-                  distance: ragResult.distance,
-                },
-                null,
-                2,
-              ),
-            );
-            /*
-             * RAG 提示词组装（强化版）：
-             * - 严格约束：只能使用 Context，禁止编造；
-             * - 结构化 Context：来源列表 + 片段正文；
-             * - 输出要求：简洁、有引用编号；
-             * - 若证据不足，直接回答“不知道”。
-             */
-            const sourcesBlock =
-              ragResult.snippets && ragResult.snippets.length > 0
-                ? ragResult.snippets
-                    .map((snippet, index) => {
-                      const label = `[${index + 1}] ${snippet.title}`;
-                      const url = snippet.url ? ` (${snippet.url})` : "";
-                      return `${label}${url}`;
-                    })
-                    .join("\n")
-                : ragResult.sources.length > 0
-                  ? ragResult.sources
-                      .map((source, index) => {
-                        const label = `[${index + 1}] ${source.title}`;
-                        const url = source.url ? ` (${source.url})` : "";
-                        return `${label}${url}`;
-                      })
-                      .join("\n")
-                  : "无可用来源";
-            const contextSnippet =
-              ragResult.text.length > 800
-                ? `${ragResult.text.slice(0, 800).trimEnd()}…`
-                : ragResult.text;
-            /*
-             * 片段按来源编号拼装：
-             * - 优先使用 ragResult.snippets 的逐条内容；
-             * - 若缺失则退回单段 contextSnippet。
-             */
-            const snippetItems =
-              ragResult.snippets && ragResult.snippets.length > 0
-                ? ragResult.snippets
-                : null;
-            const contextBlocks = snippetItems
-              ? snippetItems
-                  .map((snippet, index) => {
-                    const label = `[${index + 1}] ${snippet.title}`;
-                    const url = snippet.url ? ` (${snippet.url})` : "";
-                    return `${label}${url}\n${snippet.content}`;
-                  })
-                  .join("\n\n")
-              : contextSnippet;
-            const contextLines = [
-              "你是一个基于检索内容回答问题的助手。",
-              "规则：只使用 Context 中的信息作答；禁止编造或补充未出现的事实。",
-              "若 Context 不能回答问题，请直接回答“不知道”。",
-              "回答要求：简洁明了，必要时做总结/润色；答案末尾用 [1][2] 标注引用来源。",
-              "",
-              "Context Sources:",
-              sourcesBlock,
-              "",
-              "Context Snippets:",
-              contextBlocks,
-              "",
-              `Question: ${data.query}`,
-              "Answer:",
-            ];
-            const basePrompt = contextLines.join("\n");
-            const prompt = skillContextPrefix
-              ? `${skillContextPrefix}\n\n${basePrompt}`
-              : basePrompt;
-            console.log(`${yellow}[rag-flow] 组装Prompt${reset}\n${prompt}`);
-            const llmResult = await agent.generateText(prompt, {
-              userId: data.options?.userId,
-              conversationId: data.options?.conversationId,
-              headers: requestHeaders,
-              // 注入 ragMode 到上下文，用于动态工具策略判断。
-              context: buildToolCallContext(ragMode),
-            });
-            const text =
-              typeof llmResult.text === "string" && llmResult.text.trim()
-                ? llmResult.text
-                : "I did not get a response. Please try again.";
-            return {
-              text,
-              sources: ragResult.sources,
-              score: ragResult.score,
-              distance: ragResult.distance,
-            };
-          }
-          // 未命中就让 LLM 直接思考回答。
-          const llmResult = await agent.generateText(
-            buildUserPrompt(data.query),
-            {
-              userId: data.options?.userId,
-              conversationId: data.options?.conversationId,
-              headers: requestHeaders,
-              // 注入 ragMode 到上下文，用于动态工具策略判断。
-              context: buildToolCallContext(ragMode),
-            },
-          );
-          const text =
-            typeof llmResult.text === "string" && llmResult.text.trim()
-              ? llmResult.text
-              : "I did not get a response. Please try again.";
-          return {
-            text,
-            sources: [],
-            score: null,
-            distance: null,
-          };
-        }
-        // 关闭 LLM 拼接时，如果未命中且处于 hybrid，则回退到 LLM。
-        const shouldFallback = mode === "hybrid" && !isAnswer;
-        if (!shouldFallback) {
-          return ragResult;
-        }
-      }
-      // ragMode=llm 或非 RAG 模式时，直接走 LLM。
-      const llmResult = await agent.generateText(buildUserPrompt(data.query), {
-        userId: data.options?.userId,
-        conversationId: data.options?.conversationId,
-        headers: requestHeaders,
-        // 注入 ragMode 到上下文，用于动态工具策略判断。
-        context: buildToolCallContext(ragMode),
-      });
-      const text =
-        typeof llmResult.text === "string" && llmResult.text.trim()
-          ? llmResult.text
-          : "I did not get a response. Please try again.";
-      return {
-        text,
-        sources: [],
-        score: null,
-        distance: null,
-      };
-    },
-  }),
-);
+const localRagWorkflow = createLocalRagWorkflow({ agent, provider });
 
-// 退货请求结构化 JSON schema。
-const returnCaseSchema = z.object({
-  // 退货请求是否满足条件。
-  decision: z.enum(["eligible", "ineligible", "needs_info"]),
-  // 当前缺失的字段列表。
-  missingFields: z.array(z.string()),
-  // 下一步处理建议。
-  nextSteps: z.array(z.string()),
-  // 简要摘要。
-  summary: z.string(),
-  // 结构化用户请求信息。
-  request: z.object({
-    // 订单号（可选）。
-    orderId: z.string().optional(),
-    // 联系方式（可选）。
-    contact: z.string().optional(),
-    // 退货商品信息（可选）。
-    items: z.string().optional(),
-    // 购买日期（可选）。
-    purchaseDate: z.string().optional(),
-    // 退货原因（可选）。
-    reason: z.string().optional(),
-    // 商品状态/成色（可选）。
-    condition: z.string().optional(),
-    // 期望处理方式（可选）。
-    preferredResolution: z.string().optional(),
-  }),
-});
+const returnWorkflow = createReturnWorkflow({ agent, provider });
 
-// 退货 case 的类型定义。
-type ReturnCase = z.infer<typeof returnCaseSchema>;
+const flightBookingWorkflow = createFlightBookingWorkflow({ agent, provider });
 
-// 将未知数组输入规范化为 string[]。
-const coerceStringArray = (value: unknown) =>
-  Array.isArray(value)
-    ? value
-        .map((item) => (typeof item === "string" ? item.trim() : String(item)))
-        .filter(Boolean)
-    : [];
-
-// 将模型输出归一化为 ReturnCase 结构。
-const normalizeReturnCase = (payload: any): ReturnCase => {
-  const decision =
-    payload?.decision === "eligible" ||
-    payload?.decision === "ineligible" ||
-    payload?.decision === "needs_info"
-      ? payload.decision
-      : "needs_info";
-  return {
-    decision,
-    missingFields: coerceStringArray(payload?.missingFields),
-    nextSteps: coerceStringArray(payload?.nextSteps),
-    summary: typeof payload?.summary === "string" ? payload.summary.trim() : "",
-    request: {
-      orderId:
-        typeof payload?.request?.orderId === "string"
-          ? payload.request.orderId.trim()
-          : undefined,
-      contact:
-        typeof payload?.request?.contact === "string"
-          ? payload.request.contact.trim()
-          : undefined,
-      items:
-        typeof payload?.request?.items === "string"
-          ? payload.request.items.trim()
-          : undefined,
-      purchaseDate:
-        typeof payload?.request?.purchaseDate === "string"
-          ? payload.request.purchaseDate.trim()
-          : undefined,
-      reason:
-        typeof payload?.request?.reason === "string"
-          ? payload.request.reason.trim()
-          : undefined,
-      condition:
-        typeof payload?.request?.condition === "string"
-          ? payload.request.condition.trim()
-          : undefined,
-      preferredResolution:
-        typeof payload?.request?.preferredResolution === "string"
-          ? payload.request.preferredResolution.trim()
-          : undefined,
-    },
-  };
-};
-
-// 从文本中提取 JSON 段（支持 fenced code 或最外层花括号）。
-const extractJsonPayload = (text: string) => {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced && fenced[1]) {
-    return fenced[1].trim();
-  }
-  const firstBrace = text.indexOf("{");
-  const lastBrace = text.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return text.slice(firstBrace, lastBrace + 1).trim();
-  }
-  return null;
-};
-
-// 解析并校验 ReturnCase；失败时返回兜底结构。
-const parseReturnCase = (text: string): ReturnCase => {
-  const payload = extractJsonPayload(text);
-  if (payload) {
-    try {
-      const parsed = JSON.parse(payload);
-      const normalized = normalizeReturnCase(parsed);
-      const result = returnCaseSchema.safeParse(normalized);
-      if (result.success) {
-        return result.data;
-      }
-    } catch (error) {
-      console.warn("[return-workflow] failed to parse JSON", error);
-    }
-  }
-  return {
-    decision: "needs_info",
-    missingFields: [
-      "orderId",
-      "contact",
-      "items",
-      "purchaseDate",
-      "reason",
-      "condition",
-      "preferredResolution",
-    ],
-    nextSteps: ["Provide the missing return details so we can proceed."],
-    summary: text.trim().slice(0, 400),
-    request: {},
-  };
-};
-
-// 退货流程 Workflow（识别并结构化返回请求）。
-const returnWorkflow = createWorkflow(
-  {
-    id: "return-request-workflow",
-    name: "Return Request Workflow",
-    purpose: "Route and structure ecommerce return/refund requests.",
-    input: z.object({
-      // 用户查询内容。
-      query: z.string().min(1),
-      options: z
-        .object({
-          // 用户标识（用于记忆/上下文）。
-          userId: z.string().optional(),
-          // 会话标识（用于连续对话）。
-          conversationId: z.string().optional(),
-          // 是否启用模型推理（Qwen 可用）。
-          enableThinking: z.boolean().optional(),
-          // RAG 模式（rag 或 llm）。
-          ragMode: z.enum(["rag", "llm"]).optional(),
-        })
-        .optional(),
-    }),
-    result: z.object({
-      // 结构化退货 case。
-      case: returnCaseSchema,
-      // 原始模型输出文本。
-      rawText: z.string(),
-      // 面向用户的回复文本。
-      replyText: z.string(),
-    }),
-  },
-  andThen({
-    id: "return-request-run",
-    name: "退货流程",
-    purpose: "Analyze a return request and output a structured case.",
-    inputSchema: z.object({
-      // 用户查询内容。
-      query: z.string().min(1),
-      options: z
-        .object({
-          // 用户标识（用于记忆/上下文）。
-          userId: z.string().optional(),
-          // 会话标识（用于连续对话）。
-          conversationId: z.string().optional(),
-          // 是否启用模型推理（Qwen 可用）。
-          enableThinking: z.boolean().optional(),
-          // RAG 模式（rag 或 llm）。
-          ragMode: z.enum(["rag", "llm"]).optional(),
-        })
-        .optional(),
-    }),
-    outputSchema: z.object({
-      // 结构化退货 case。
-      case: returnCaseSchema,
-      // 原始模型输出文本。
-      rawText: z.string(),
-      // 面向用户的回复文本。
-      replyText: z.string(),
-    }),
-    execute: async ({ data }) => {
-      const ragMode = data.options?.ragMode === "rag" ? "rag" : "llm";
-      const enableThinking =
-        typeof data.options?.enableThinking === "boolean"
-          ? data.options.enableThinking
-          : undefined;
-      const requestHeaders =
-        provider === "qwen" && enableThinking !== undefined
-          ? { "x-qwen-enable-thinking": String(enableThinking) }
-          : undefined;
-      const skillContextPrefix = await buildSkillContextPrefix(data.query, {
-        forceSkills: ["ecommerce-returns"],
-      });
-      const promptSections = [
-        skillContextPrefix,
-        "You are a return-requests agent. Analyze the user message and produce JSON only.",
-        "Return JSON schema:",
-        JSON.stringify(
-          {
-            decision: "eligible | ineligible | needs_info",
-            missingFields: ["orderId", "contact", "items", "purchaseDate"],
-            nextSteps: ["step 1", "step 2"],
-            summary: "short summary",
-            request: {
-              orderId: "",
-              contact: "",
-              items: "",
-              purchaseDate: "",
-              reason: "",
-              condition: "",
-              preferredResolution: "refund | exchange | store credit",
-            },
-          },
-          null,
-          2,
-        ),
-        "Constraints:",
-        "- Output only JSON. No markdown or extra text.",
-        "- Use needs_info when required details are missing.",
-        `User Message:\n${data.query}`,
-      ].filter(Boolean);
-      const prompt = promptSections.join("\n\n");
-      const llmResult = await agent.generateText(prompt, {
-        userId: data.options?.userId,
-        conversationId: data.options?.conversationId,
-        headers: requestHeaders,
-        context: buildToolCallContext(ragMode),
-      });
-      const rawText = typeof llmResult.text === "string" ? llmResult.text : "";
-      const parsed = parseReturnCase(rawText);
-      const replyPromptSections = [
-        skillContextPrefix,
-        "You are a customer support agent for ecommerce returns.",
-        "Write a natural, friendly reply in Chinese to the user.",
-        "Do not mention internal fields like summary/missingFields.",
-        "If info is missing, ask concise follow-up questions in one message.",
-        "Keep it short and human.",
-        `User Message:\n${data.query}`,
-        "Case JSON:",
-        JSON.stringify(parsed, null, 2),
-      ].filter(Boolean);
-      const replyPrompt = replyPromptSections.join("\n\n");
-      const replyResult = await agent.generateText(replyPrompt, {
-        userId: data.options?.userId,
-        conversationId: data.options?.conversationId,
-        headers: requestHeaders,
-        context: buildToolCallContext("llm"),
-      });
-      const replyText =
-        typeof replyResult.text === "string" && replyResult.text.trim()
-          ? replyResult.text.trim()
-          : "";
-      const yellow = "\u001b[33m";
-      const reset = "\u001b[0m";
-      console.log(`${yellow}[return-workflow] replyText${reset}\n${replyText}`);
-      return { case: parsed, rawText, replyText };
-    },
-  }),
-);
-
-// 路由决策 JSON schema。
-const routingDecisionSchema = z.object({
-  // 选择的 workflow id。
-  workflowId: z.enum(ROUTING_WORKFLOWS),
-  // 选择原因说明。
-  reason: z.string(),
-});
-
-// 路由决策类型定义。
-type RoutingDecision = z.infer<typeof routingDecisionSchema>;
-
-// 归一化路由决策，确保 workflowId 在允许范围内。
-const normalizeRoutingDecision = (payload: any): RoutingDecision => {
-  const workflowId = ROUTING_WORKFLOWS.includes(payload?.workflowId)
-    ? payload.workflowId
-    : "local-rag-workflow";
-  const reason =
-    typeof payload?.reason === "string" && payload.reason.trim()
-      ? payload.reason.trim()
-      : "fallback";
-  return { workflowId, reason };
-};
-
-// 解析路由决策 JSON；失败则回退默认 workflow。
-const parseRoutingDecision = (text: string): RoutingDecision => {
-  const payload = extractJsonPayload(text);
-  if (payload) {
-    try {
-      const parsed = JSON.parse(payload);
-      const normalized = normalizeRoutingDecision(parsed);
-      const result = routingDecisionSchema.safeParse(normalized);
-      if (result.success) {
-        return result.data;
-      }
-    } catch (error) {
-      console.warn("[routing-workflow] failed to parse JSON", error);
-    }
-  }
-  return { workflowId: "local-rag-workflow", reason: "fallback" };
-};
-
-// 路由 Workflow：决定进入哪个业务流程。
-const routingWorkflow = createWorkflow(
-  {
-    id: "routing-workflow",
-    name: "Routing Workflow",
-    purpose: "Route user input to the correct workflow.",
-    input: z.object({
-      // 用户查询内容。
-      query: z.string().min(1),
-      options: z
-        .object({
-          // 用户标识（用于记忆/上下文）。
-          userId: z.string().optional(),
-          // 会话标识（用于连续对话）。
-          conversationId: z.string().optional(),
-          // 是否启用模型推理（Qwen 可用）。
-          enableThinking: z.boolean().optional(),
-        })
-        .optional(),
-    }),
-    result: routingDecisionSchema,
-  },
-  andThen({
-    id: "routing-run",
-    name: "路由判断",
-    purpose: "Choose a workflow id for the user request.",
-    inputSchema: z.object({
-      // 用户查询内容。
-      query: z.string().min(1),
-      options: z
-        .object({
-          // 用户标识（用于记忆/上下文）。
-          userId: z.string().optional(),
-          // 会话标识（用于连续对话）。
-          conversationId: z.string().optional(),
-          // 是否启用模型推理（Qwen 可用）。
-          enableThinking: z.boolean().optional(),
-        })
-        .optional(),
-    }),
-    outputSchema: routingDecisionSchema,
-    execute: async ({ data }) => {
-      const enableThinking =
-        typeof data.options?.enableThinking === "boolean"
-          ? data.options.enableThinking
-          : undefined;
-      const requestHeaders =
-        provider === "qwen" && enableThinking !== undefined
-          ? { "x-qwen-enable-thinking": String(enableThinking) }
-          : undefined;
-      const promptSections = [
-        "You are a routing agent. Choose the best workflow id for the user request.",
-        "Allowed workflow ids:",
-        ...ROUTING_WORKFLOWS.map((workflow) => `- ${workflow}`),
-        "Return JSON only.",
-        JSON.stringify(
-          {
-            workflowId: ROUTING_WORKFLOWS.join(" | "),
-            reason: "short reason",
-          },
-          null,
-          2,
-        ),
-        `User Message:\n${data.query}`,
-      ];
-      const prompt = promptSections.join("\n\n");
-      const llmResult = await routingAgent.generateText(prompt, {
-        userId: data.options?.userId,
-        conversationId: data.options?.conversationId,
-        headers: requestHeaders,
-        context: buildToolCallContext("llm"),
-      });
-      const rawText = typeof llmResult.text === "string" ? llmResult.text : "";
-      return parseRoutingDecision(rawText);
-    },
-  }),
-);
+const routingWorkflow = createRoutingWorkflow({ routingAgent, provider });
 
 /*
  * 对外导出的 Engine 组件：
@@ -1746,10 +987,17 @@ const routingWorkflow = createWorkflow(
  * - workflows: 可被 VoltAgent 服务注册的 workflow 集合
  * - localRagWorkflow: 直接暴露单个本地 RAG workflow，便于定向调用
  */
-export { agent, localRagWorkflow, returnWorkflow, routingWorkflow };
+export {
+  agent,
+  localRagWorkflow,
+  returnWorkflow,
+  flightBookingWorkflow,
+  routingWorkflow,
+};
 
 export const workflows = {
   localRagWorkflow,
   returnWorkflow,
+  flightBookingWorkflow,
   routingWorkflow,
 };

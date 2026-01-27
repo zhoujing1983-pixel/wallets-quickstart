@@ -107,7 +107,16 @@ export class SqliteVectorStore
 
   async clear(): Promise<void> {
     const db = this.getDb();
-    db.exec("DELETE FROM rag_vectors;");
+    try {
+      db.exec("DELETE FROM rag_vectors;");
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !/no such table: rag_vectors/i.test(error.message)
+      ) {
+        throw error;
+      }
+    }
     db.exec("DELETE FROM rag_docs;");
   }
 
@@ -129,6 +138,11 @@ export class SqliteVectorStore
     );
     const insertMany = db.transaction(() => {
       for (const record of records) {
+        if (record.embedding.length !== dimension) {
+          throw new Error(
+            `Embedding dimension mismatch: expected ${dimension}, got ${record.embedding.length}`
+          );
+        }
         const metadata = record.metadata ?? { title: "Untitled" };
         const result = insertDoc.run(
           record.id,
@@ -136,9 +150,11 @@ export class SqliteVectorStore
           record.text ?? "",
           metadata.url ?? null
         );
+        const embedding = Float32Array.from(record.embedding);
+        const embeddingBlob = Buffer.from(embedding.buffer);
         insertVector.run(
           Number(result.lastInsertRowid),
-          JSON.stringify(record.embedding)
+          embeddingBlob
         );
       }
     });
