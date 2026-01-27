@@ -21,6 +21,7 @@ import { LibSQLMemoryAdapter } from "@voltagent/libsql";
 import { createRoutingAgent } from "@/agent/routing/routing-agent";
 import {
   createFlightBookingWorkflow,
+  createDirectChatWorkflow,
   createLocalRagWorkflow,
   createReturnWorkflow,
   createRoutingWorkflow,
@@ -979,6 +980,8 @@ const returnWorkflow = createReturnWorkflow({ agent, provider });
 
 const flightBookingWorkflow = createFlightBookingWorkflow({ agent, provider });
 
+const directChatWorkflow = createDirectChatWorkflow({ agent, provider });
+
 const routingWorkflow = createRoutingWorkflow({ routingAgent, provider });
 
 /*
@@ -992,6 +995,7 @@ export {
   localRagWorkflow,
   returnWorkflow,
   flightBookingWorkflow,
+  directChatWorkflow,
   routingWorkflow,
 };
 
@@ -999,5 +1003,6 @@ export const workflows = {
   localRagWorkflow,
   returnWorkflow,
   flightBookingWorkflow,
+  directChatWorkflow,
   routingWorkflow,
 };

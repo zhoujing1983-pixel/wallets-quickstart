@@ -1,7 +1,7 @@
 import {
   FLIGHT_KEYWORDS,
   RETURN_KEYWORDS,
-} from "@/agent/routing/routing-config";
+} from "@/agent/config/routing-config";
 
 type RouteDecision = {
   workflowId: string;

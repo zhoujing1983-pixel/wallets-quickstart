@@ -37,5 +37,6 @@ export const FLIGHT_KEYWORDS = [
 export const ROUTING_WORKFLOWS = [
   "flight-booking-workflow",
   "return-request-workflow",
+  "direct-chat-workflow",
   "local-rag-workflow",
 ] as const;

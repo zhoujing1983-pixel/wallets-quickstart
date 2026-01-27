@@ -1,6 +1,8 @@
 import { matchKeywordRoute } from "@/agent/routing/route-selector";
 import { formatReturnWorkflowResult } from "@/agent/routing/formatters/return-workflow";
 import { formatFlightWorkflowResult } from "@/agent/routing/formatters/flight-workflow";
+import { matchSimpleChatRule } from "@/agent/config/simple-chat-rule";
+import { SIMPLE_CHAT_RULE_ENABLED } from "@/agent/config/simple-chat-config";
 
 type ChatOptions = {
   needRag?: boolean;
@@ -125,7 +127,7 @@ const executeWorkflow = async (
 const resolveWorkflowId = async (
   input: string,
   payload: WorkflowPayload
-): Promise<string> => {
+): Promise<{ workflowId: string; directText?: string }> => {
   const start = Date.now();
   const keywordDecision = matchKeywordRoute(input);
   if (keywordDecision?.workflowId) {
@@ -134,20 +136,57 @@ const resolveWorkflowId = async (
       reason: keywordDecision.reason,
       durationMs: Date.now() - start,
     });
-    return keywordDecision.workflowId;
+    return { workflowId: keywordDecision.workflowId };
+  }
+
+  if (SIMPLE_CHAT_RULE_ENABLED) {
+    const simpleChatDecision = matchSimpleChatRule(input);
+    if (simpleChatDecision.isSimple) {
+      const red = "\x1b[31m";
+      const reset = "\x1b[0m";
+      console.log(
+        `${red}[routing] simple chat matched${reset}`,
+        {
+          workflowId: "direct-chat-workflow",
+          reason: simpleChatDecision.reason,
+          durationMs: Date.now() - start,
+        }
+      );
+      return { workflowId: "direct-chat-workflow" };
+    }
   }
 
   try {
     const routingRes = await executeWorkflow("routing-workflow", payload);
     const routingResult = routingRes?.data?.result as {
       workflowId?: string;
+      directText?: string;
     };
     if (routingResult && typeof routingResult.workflowId === "string") {
-      logRouting("model matched", {
+      if (typeof routingResult.directText === "string") {
+        const red = "\x1b[31m";
+        const reset = "\x1b[0m";
+        console.log(
+          `${red}[routing] model direct reply${reset}`,
+          {
+            workflowId: routingResult.workflowId,
+            durationMs: Date.now() - start,
+            reply: routingResult.directText,
+          }
+        );
+      } else {
+        logRouting("model matched", {
+          workflowId: routingResult.workflowId,
+          durationMs: Date.now() - start,
+        });
+      }
+      return {
         workflowId: routingResult.workflowId,
-        durationMs: Date.now() - start,
-      });
-      return routingResult.workflowId;
+        directText:
+          typeof routingResult.directText === "string"
+            ? routingResult.directText
+            : undefined,
+      };
     }
   } catch (error) {
     logRouting("model fallback failed", {
@@ -159,7 +198,7 @@ const resolveWorkflowId = async (
   logRouting("fallback to local-rag-workflow", {
     durationMs: Date.now() - start,
   });
-  return "local-rag-workflow";
+  return { workflowId: "local-rag-workflow" };
 };
 
 export const routeAgentChat = async ({
@@ -169,7 +208,21 @@ export const routeAgentChat = async ({
 }: RouteServiceInput) => {
   const start = Date.now();
   const payload = buildWorkflowInput(input, options, headerEnableThinking);
-  const workflowId = await resolveWorkflowId(input, payload);
+  const routingDecision = await resolveWorkflowId(input, payload);
+  const { workflowId, directText } = routingDecision;
+  if (workflowId === "direct-chat-workflow" && directText) {
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+    console.log(
+      `${red}[routing] direct reply from routing${reset}`,
+      {
+        workflowId,
+        durationMs: Date.now() - start,
+        reply: directText,
+      }
+    );
+    return { text: directText, sources: [], snippets: [] };
+  }
   logRouting("executing workflow", { workflowId });
   const workflowRes = await executeWorkflow(workflowId, payload);
   logRouting("workflow raw response", { workflowId, workflowRes });
@@ -178,6 +231,20 @@ export const routeAgentChat = async ({
   if (!result || typeof result !== "object") {
     logRouting("workflow result missing", { workflowId });
     throw new Error("Workflow result missing.");
+  }
+
+  if (workflowId === "direct-chat-workflow") {
+    const replyText =
+      result && typeof result === "object" && typeof (result as any).text === "string"
+        ? (result as any).text
+        : "";
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+    console.log(`${red}[routing] direct-chat reply${reset}`, {
+      workflowId,
+      durationMs: Date.now() - start,
+      reply: replyText,
+    });
   }
 
   if (workflowId === "return-request-workflow") {
