@@ -47,3 +47,4 @@ agent-memory.db*
 data.sqld
 
 rag-docs
+local-rag-vec.db

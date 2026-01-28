@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n web,worker,agent,ngrok -c blue,magenta,cyan,green \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\" ",
+    "dev": "concurrently -k -n web,worker,agent -c blue,magenta,cyan,green \"next dev --turbopack\" \"npm run email:worker\" \"npm run agent:openai\" ",
     "dev:all": "npm run docker:up && npm run dev",
     "build": "next build",
     "start": "next start",
@@ -52,7 +52,6 @@
     "react-transition-group": "^4.4.5",
     "redis": "^5.10.0",
     "sqlite-vec": "^0.1.7-alpha.2",
-    "sqlite-vec-darwin-arm64": "^0.1.7-alpha.2",
     "tailwind-merge": "^3.0.2",
     "tw-animate-css": "^1.2.4",
     "xlsx": "^0.18.5",
