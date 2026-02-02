@@ -192,14 +192,14 @@ export function Activity() {
     };
 
     fetchActivity();
-    // Poll every 5 seconds
-    const interval = setInterval(() => {
-      fetchActivity();
-       if (typeof window !== "undefined") {
-            window.dispatchEvent(new Event("wallet:refresh-balance"));
-          }
-    }, 5000);
-    return () => clearInterval(interval);
+    // Auto-polling disabled for /finyx/dashboard (manual refresh only).
+    // const interval = setInterval(() => {
+    //   fetchActivity();
+    //   if (typeof window !== "undefined") {
+    //     window.dispatchEvent(new Event("wallet:refresh-balance"));
+    //   }
+    // }, 5000);
+    // return () => clearInterval(interval);
   }, [tokenSymbolsByMint, wallet]);
 
   const formatAddress = (address: string) => {

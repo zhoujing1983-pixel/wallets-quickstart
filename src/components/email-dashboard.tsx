@@ -117,8 +117,8 @@ export function EmailDashboard({
     try {
       const res = await fetch(
         `/api/auth/email/balance?walletLocator=${encodeURIComponent(
-          walletAddress
-        )}&tokens=USDC`
+          walletAddress,
+        )}&tokens=USDC`,
       );
       const data = await res.json();
       if (!res.ok) {
@@ -136,7 +136,7 @@ export function EmailDashboard({
           ? data.tokens
           : [];
       const tokenEntry = tokenList.find(
-        (token: any) => String(token?.symbol ?? "").toLowerCase() === "usdc"
+        (token: any) => String(token?.symbol ?? "").toLowerCase() === "usdc",
       );
       const amount =
         tokenEntry?.amount ??
@@ -171,18 +171,19 @@ export function EmailDashboard({
     fetchBalance();
   }, [fetchBalance, walletAddress]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const handleRefresh = () => {
-      fetchBalance();
-    };
-    window.addEventListener("wallet:refresh-balance", handleRefresh);
-    return () => {
-      window.removeEventListener("wallet:refresh-balance", handleRefresh);
-    };
-  }, [fetchBalance]);
+  // Auto-refresh via wallet:refresh-balance disabled for /finyx/dashboard.
+  // useEffect(() => {
+  //   if (typeof window === "undefined") {
+  //     return;
+  //   }
+  //   const handleRefresh = () => {
+  //     fetchBalance();
+  //   };
+  //   window.addEventListener("wallet:refresh-balance", handleRefresh);
+  //   return () => {
+  //     window.removeEventListener("wallet:refresh-balance", handleRefresh);
+  //   };
+  // }, [fetchBalance]);
 
   const handleTopUp = () => {
     if (!walletAddress) {
@@ -201,8 +202,8 @@ export function EmailDashboard({
     try {
       const res = await fetch(
         `/api/auth/email/activity?walletLocator=${encodeURIComponent(
-          walletAddress
-        )}&sort=desc&chain=solana&tokens=USDC&status=successful`
+          walletAddress,
+        )}&sort=desc&chain=solana&tokens=USDC&status=successful`,
       );
       const data = await res.json();
       if (!res.ok) {
@@ -242,7 +243,6 @@ export function EmailDashboard({
       }
       hasLoadedActivityRef.current = true;
     }
-
   }, [walletAddress]);
 
   useEffect(() => {
@@ -252,26 +252,26 @@ export function EmailDashboard({
         return;
       }
       fetchActivity();
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("wallet:refresh-balance"));
-      }
+      // Auto-refresh via wallet:refresh-balance disabled for /finyx/dashboard.
+      // if (typeof window !== "undefined") {
+      //   window.dispatchEvent(new Event("wallet:refresh-balance"));
+      // }
     };
     runPoll();
-    const interval = window.setInterval(runPoll, 10000);
-    const handleVisibility = () => {
-      if (typeof document !== "undefined" && !document.hidden) {
-        runPoll();
-      }
-    };
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", handleVisibility);
-    }
-    return () => {
-      window.clearInterval(interval);
-      if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", handleVisibility);
-      }
-    };
+    // Auto-refresh on tab activation disabled for /finyx/dashboard.
+    // const handleVisibility = () => {
+    //   if (typeof document !== "undefined" && !document.hidden) {
+    //     runPoll();
+    //   }
+    // };
+    // if (typeof document !== "undefined") {
+    //   document.addEventListener("visibilitychange", handleVisibility);
+    // }
+    // return () => {
+    //   if (typeof document !== "undefined") {
+    //     document.removeEventListener("visibilitychange", handleVisibility);
+    //   }
+    // };
   }, [fetchActivity, walletAddress]);
 
   return (
@@ -310,16 +310,16 @@ export function EmailDashboard({
                 <span>uilt for fast payouts and compliant flows</span>
               </span>
             </h2>
-            <p className="max-w-3xl text-sm text-white/80">
-             
-            </p>
+            <p className="max-w-3xl text-sm text-white/80"></p>
           </div>
         </section>
 
         <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-semibold text-slate-900">Dashboard</h2>
+              <h2 className="text-2xl font-semibold text-slate-900">
+                Dashboard
+              </h2>
               <p className="text-sm text-slate-500">
                 Wallet overview and instant actions
               </p>
@@ -367,7 +367,9 @@ export function EmailDashboard({
                 </div>
               </div>
               <div className="bg-[#27395d] border border-white/15 p-6 rounded-3xl shadow-lg space-y-4">
-                <h3 className="text-lg font-semibold text-white">Wallet details</h3>
+                <h3 className="text-lg font-semibold text-white">
+                  Wallet details
+                </h3>
                 <div className="flex flex-col gap-3 text-sm text-slate-200">
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">Address</span>
@@ -376,8 +378,8 @@ export function EmailDashboard({
                         {isEmailWalletLoading
                           ? "Loading..."
                           : walletAddress
-                          ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-6)}`
-                          : "Not connected"}
+                            ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-6)}`
+                            : "Not connected"}
                       </span>
                       <button
                         onClick={handleCopyAddress}
@@ -392,7 +394,12 @@ export function EmailDashboard({
                             height={16}
                           />
                         ) : (
-                          <Image src="/copy.svg" alt="Copy" width={16} height={16} />
+                          <Image
+                            src="/copy.svg"
+                            alt="Copy"
+                            width={16}
+                            height={16}
+                          />
                         )}
                       </button>
                     </div>
@@ -404,7 +411,9 @@ export function EmailDashboard({
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">Chain</span>
                     <span className="text-slate-100 capitalize">
-                      {emailWallet?.chain ?? emailWallet?.chainType ?? "Unknown"}
+                      {emailWallet?.chain ??
+                        emailWallet?.chainType ??
+                        "Unknown"}
                     </span>
                   </div>
                 </div>
@@ -416,9 +425,10 @@ export function EmailDashboard({
                 onTransferSuccess={() => {
                   fetchActivity();
                   fetchBalance();
-                  if (typeof window !== "undefined") {
-                    window.dispatchEvent(new Event("wallet:refresh-balance"));
-                  }
+                  // Auto-refresh via wallet:refresh-balance disabled for /finyx/dashboard.
+                  // if (typeof window !== "undefined") {
+                  //   window.dispatchEvent(new Event("wallet:refresh-balance"));
+                  // }
                 }}
               />
             </div>
@@ -430,7 +440,9 @@ export function EmailDashboard({
                     <p className="text-sm text-rose-200">{activityError}</p>
                   ) : isLoadingActivity ? (
                     <div className="flex-1 flex items-center justify-center">
-                      <p className="text-sm text-slate-300">Loading activity...</p>
+                      <p className="text-sm text-slate-300">
+                        Loading activity...
+                      </p>
                     </div>
                   ) : activity.length > 0 ? (
                     <div className="flex-1 overflow-hidden">
@@ -445,7 +457,9 @@ export function EmailDashboard({
                             : String(amount);
                           const isOut = item?.type === "wallets.transfer.out";
                           const direction = isOut ? "Sent" : "Received";
-                          const timestamp = formatRelativeTime(item?.completedAt);
+                          const timestamp = formatRelativeTime(
+                            item?.completedAt,
+                          );
                           const occurredAt = formatTimestamp(item?.completedAt);
                           const txId = item?.onChain?.txId ?? "";
                           const counterparty = isOut
@@ -462,19 +476,29 @@ export function EmailDashboard({
                             <div
                               key={txId || index}
                               className={`flex items-center justify-between p-3 rounded-2xl ${
-                                index % 2 === 0 ? "bg-white/5" : "bg-orange-500/5"
+                                index % 2 === 0
+                                  ? "bg-white/5"
+                                  : "bg-orange-500/5"
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <div
                                   className={`w-9 h-9 rounded-full flex items-center justify-center ${
-                                    isOut ? "bg-white/15 text-slate-200" : "bg-white/20 text-orange-100"
+                                    isOut
+                                      ? "bg-white/15 text-slate-200"
+                                      : "bg-white/20 text-orange-100"
                                   }`}
                                 >
                                   <Image
-                                    src={isOut ? "/arrow-up-right.svg" : "/arrow-down.svg"}
+                                    src={
+                                      isOut
+                                        ? "/arrow-up-right.svg"
+                                        : "/arrow-down.svg"
+                                    }
                                     alt={direction}
-                                    className={isOut ? "filter-green" : "filter-blue"}
+                                    className={
+                                      isOut ? "filter-green" : "filter-blue"
+                                    }
                                     width={18}
                                     height={18}
                                   />
@@ -492,7 +516,8 @@ export function EmailDashboard({
                                     {occurredAt}
                                   </div>
                                   <div className="text-xs text-slate-300 font-mono">
-                                    {label} {formatWalletAddress(counterparty ?? "")}
+                                    {label}{" "}
+                                    {formatWalletAddress(counterparty ?? "")}
                                   </div>
                                 </div>
                               </div>
@@ -504,7 +529,9 @@ export function EmailDashboard({
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className={`text-sm font-semibold tracking-wide underline underline-offset-2 transition-colors hover:opacity-80 ${
-                                        isOut ? "text-slate-200" : "text-orange-200"
+                                        isOut
+                                          ? "text-slate-200"
+                                          : "text-orange-200"
                                       }`}
                                     >
                                       {isOut ? "-" : "+"}${amountText}
@@ -512,13 +539,17 @@ export function EmailDashboard({
                                   ) : (
                                     <div
                                       className={`text-sm font-semibold ${
-                                        isOut ? "text-slate-200" : "text-orange-200"
+                                        isOut
+                                          ? "text-slate-200"
+                                          : "text-orange-200"
                                       }`}
                                     >
                                       {isOut ? "-" : "+"}${amountText}
                                     </div>
                                   )}
-                                  <div className="text-xs text-slate-400">{symbol}</div>
+                                  <div className="text-xs text-slate-400">
+                                    {symbol}
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -528,7 +559,9 @@ export function EmailDashboard({
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-center px-4 gap-3">
-                      <h4 className="font-medium text-white">Your activity feed</h4>
+                      <h4 className="font-medium text-white">
+                        Your activity feed
+                      </h4>
                       <p className="text-sm text-slate-400">
                         When you add and send money it shows up here.
                       </p>
