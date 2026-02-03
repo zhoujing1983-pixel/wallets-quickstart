@@ -97,10 +97,14 @@ const wrapMemoryMethod = (name: string) => {
   }
   memoryAny[name] = async (...args: unknown[]) => {
     const sanitizedArgs = args.map((arg) => stripNoThinkFromValue(arg));
-    console.log(`[memory:${name}]`, sanitizedArgs);
+    if (name !== "addMessage") {
+      console.log(`[memory:${name}]`, sanitizedArgs);
+    }
     try {
       const result = await original(...sanitizedArgs);
-      console.log(`[memory:${name}] success`);
+      if (name !== "addMessage") {
+        console.log(`[memory:${name}] success`);
+      }
       return result;
     } catch (error) {
       console.error(`[memory:${name}] failed`, error);

@@ -29,15 +29,88 @@ const isWeatherIntent = (input: string): boolean => {
 };
 
 const logMcpWeatherResult = (output: unknown, error?: unknown) => {
-  const red = "\x1b[31m";
+  const yellow = "\x1b[33m";
   const reset = "\x1b[0m";
   if (error) {
-    console.log(`${red}[mcp:weather] error${reset}`, error);
+    console.log(`${yellow}[mcp:weather] error${reset}`, error);
     return;
   }
   const payload =
     typeof output === "string" ? output : JSON.stringify(output, null, 2);
-  console.log(`${red}[mcp:weather] result${reset}`, payload);
+  console.log(`${yellow}[mcp:weather] result${reset}`, payload);
+};
+
+const parseWeatherToolPayload = (output: unknown) => {
+  if (!output) return null;
+  if (typeof output === "object" && output !== null) {
+    const record = output as Record<string, unknown>;
+    if (record.structuredContent && typeof record.structuredContent === "object") {
+      return record.structuredContent as Record<string, unknown>;
+    }
+  }
+  if (Array.isArray(output)) {
+    const first = output[0] as any;
+    if (first?.type === "text" && typeof first.text === "string") {
+      try {
+        return JSON.parse(first.text) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    }
+  }
+  if (typeof output === "string") {
+    try {
+      return JSON.parse(output) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+const LOW_GRANULARITY_FEATURE_CODES = new Set([
+  "PPL",
+  "PPLL",
+  "PPLS",
+  "PPLX",
+  "PPLF",
+  "PPLG",
+  "PPLH",
+  "PPLQ",
+  "PPLR",
+  "PPLW",
+  "PPLZ",
+]);
+
+const hasLocationQualifier = (text: string) =>
+  /省|市|自治区|自治州|特别行政区|地区|盟|州|县|区|镇|乡|村/.test(text);
+
+const shouldAskForMoreLocation = (
+  query: string,
+  geocode?: Record<string, unknown>,
+) => {
+  if (!geocode || typeof geocode !== "object") {
+    return false;
+  }
+  const admin1 = typeof geocode.admin1 === "string" ? geocode.admin1 : "";
+  const admin2 = typeof geocode.admin2 === "string" ? geocode.admin2 : "";
+  const country = typeof geocode.country === "string" ? geocode.country : "";
+  const featureCode =
+    typeof geocode.featureCode === "string" ? geocode.featureCode : "";
+
+  const queryHasQualifier = hasLocationQualifier(query);
+  const queryHasAdmin =
+    (admin1 && query.includes(admin1)) ||
+    (admin2 && query.includes(admin2)) ||
+    (country && query.includes(country));
+
+  if (featureCode && LOW_GRANULARITY_FEATURE_CODES.has(featureCode)) {
+    return !queryHasQualifier && !queryHasAdmin;
+  }
+  if (!queryHasQualifier && !queryHasAdmin && admin1 && admin2) {
+    return true;
+  }
+  return false;
 };
 
 export const createDirectChatWorkflow = ({
@@ -98,6 +171,8 @@ export const createDirectChatWorkflow = ({
             ? data.options.enableThinking
             : undefined;
         let mcpTools: Tool<any>[] = [];
+        let clarificationMessage = "";
+        let lastGeocode: Record<string, unknown> | null = null;
         if (isWeatherIntent(data.query)) {
           try {
             mcpTools = await weatherMcp.getTools();
@@ -120,16 +195,36 @@ export const createDirectChatWorkflow = ({
           userId: data.options?.userId,
           conversationId: data.options?.conversationId,
           headers: requestHeaders,
-          tools: mcpTools,
+          tools: mcpTools, //不显式传 toolChoice，默认就是 auto（工具调用可选，由模型自行决定）。
+          // 用于强制每次调用 MCP（开启后将绕过 auto，固定调用天气工具）
+          // toolChoice: isWeatherIntent(data.query)
+          //   ? { type: "tool", toolName: "weather_get_weather_by_city" }
+          //   : undefined,
           hooks: {
             onToolEnd: ({ tool, output, error }) => {
-              if (tool?.name?.startsWith("city-weather_")) {
+              if (tool?.name?.startsWith("weather_")) {
                 logMcpWeatherResult(output, error);
+                const payload = parseWeatherToolPayload(output);
+                const geocode = payload?.geocode as
+                  | Record<string, unknown>
+                  | undefined;
+                lastGeocode = geocode ?? null;
               }
             },
           },
           context: buildToolCallContext("llm"),
         });
+        if (shouldAskForMoreLocation(data.query, lastGeocode ?? undefined)) {
+          clarificationMessage =
+            "检测到地名可能存在歧义或粒度过细，请补充完整地名（如“省+市/区/县”），我再为你查询。";
+        }
+        if (clarificationMessage) {
+          const hint = `**${clarificationMessage}**`;
+          const combined = llmResult?.text?.trim()
+            ? `${hint}\n\n${llmResult.text.trim()}`
+            : hint;
+          return { text: combined, sources: [] };
+        }
         const text =
           typeof llmResult.text === "string" && llmResult.text.trim()
             ? llmResult.text.trim()
