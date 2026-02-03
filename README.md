@@ -89,6 +89,14 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
 - Watch mode for local agent: `npm run agent:dev`
 - Start the OpenAI agent in a local-only (+VoltAgent websocket proxy) mode: `npm run agent:openai:local`
 
+## MCP 天气服务（中文说明）
+本项目内置了一个独立的 MCP 天气服务，输入城市名即可查询当前天气（先地理编码再取天气）。
+
+- 入口文件：`src/agent/tools/weather-mcp.ts`
+- 启动命令：`npm run mcp:weather`
+
+说明：该 MCP 服务是独立进程（stdio 通信），不依赖 VoltAgent；只有在你需要让 VoltAgent 调用它时，才需要在 VoltAgent 里配置 MCP client 接入。
+
 ## Local RAG MVP
 The chat widget can answer simple questions locally without VoltAgent by using a lightweight SQLite + sqlite-vec RAG flow with Qwen embeddings.
 

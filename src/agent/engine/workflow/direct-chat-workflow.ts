@@ -1,5 +1,5 @@
-import { createWorkflow, andThen } from "@voltagent/core";
-import type { Agent } from "@voltagent/core";
+import { MCPConfiguration, createWorkflow, andThen } from "@voltagent/core";
+import type { Agent, Tool } from "@voltagent/core";
 import { z } from "zod";
 import { buildSkillContextPrefix } from "@/agent/skills/skill-loader";
 import { buildToolCallContext } from "@/agent/config/tool-call-policy";
@@ -7,6 +7,37 @@ import { buildToolCallContext } from "@/agent/config/tool-call-policy";
 type DirectChatWorkflowDeps = {
   agent: Agent;
   provider: string;
+};
+
+const weatherMcp = new MCPConfiguration({
+  servers: {
+    weather: {
+      type: "stdio",
+      command: "npx",
+      args: ["tsx", "src/agent/tools/weather-mcp.ts"],
+      cwd: process.cwd(),
+    },
+  },
+});
+
+const isWeatherIntent = (input: string): boolean => {
+  const text = input.toLowerCase();
+  return (
+    /weather|forecast|temperature|humidity|wind|rain|snow|storm/.test(text) ||
+    /天气|气温|温度|湿度|风|下雨|降雨|下雪|暴雨|雷暴|预报/.test(text)
+  );
+};
+
+const logMcpWeatherResult = (output: unknown, error?: unknown) => {
+  const red = "\x1b[31m";
+  const reset = "\x1b[0m";
+  if (error) {
+    console.log(`${red}[mcp:weather] error${reset}`, error);
+    return;
+  }
+  const payload =
+    typeof output === "string" ? output : JSON.stringify(output, null, 2);
+  console.log(`${red}[mcp:weather] result${reset}`, payload);
 };
 
 export const createDirectChatWorkflow = ({
@@ -66,6 +97,17 @@ export const createDirectChatWorkflow = ({
           typeof data.options?.enableThinking === "boolean"
             ? data.options.enableThinking
             : undefined;
+        let mcpTools: Tool<any>[] = [];
+        if (isWeatherIntent(data.query)) {
+          try {
+            mcpTools = await weatherMcp.getTools();
+          } catch (error) {
+            console.warn(
+              "[direct-chat-workflow] failed to load MCP tools",
+              error
+            );
+          }
+        }
         const requestHeaders =
           provider === "qwen" && enableThinking !== undefined
             ? { "x-qwen-enable-thinking": String(enableThinking) }
@@ -78,6 +120,14 @@ export const createDirectChatWorkflow = ({
           userId: data.options?.userId,
           conversationId: data.options?.conversationId,
           headers: requestHeaders,
+          tools: mcpTools,
+          hooks: {
+            onToolEnd: ({ tool, output, error }) => {
+              if (tool?.name?.startsWith("city-weather_")) {
+                logMcpWeatherResult(output, error);
+              }
+            },
+          },
           context: buildToolCallContext("llm"),
         });
         const text =

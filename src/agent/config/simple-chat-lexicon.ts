@@ -383,6 +383,28 @@ export const SIMPLE_CHAT_QUESTION_MARKERS = [
   "should we",
 ];
 
+export const SIMPLE_CHAT_QUESTION_MARKER_BYPASS_KEYWORDS = [
+  "天气",
+  "气温",
+  "温度",
+  "湿度",
+  "风",
+  "下雨",
+  "降雨",
+  "下雪",
+  "暴雨",
+  "雷暴",
+  "预报",
+  "weather",
+  "forecast",
+  "temperature",
+  "humidity",
+  "wind",
+  "rain",
+  "snow",
+  "storm",
+];
+
 export const SIMPLE_CHAT_STRONG_BUSINESS_PATTERNS = [
   // City + date or explicit trip intent
   /(?:到|去|飞往|飞去|前往).*(?:\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}|\d{1,2}月\d{1,2}日)/,

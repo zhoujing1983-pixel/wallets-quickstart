@@ -3,6 +3,7 @@ import {
   SIMPLE_CHAT_LEXICON,
   SIMPLE_CHAT_LENGTH_THRESHOLDS,
   SIMPLE_CHAT_QUESTION_MARKERS,
+  SIMPLE_CHAT_QUESTION_MARKER_BYPASS_KEYWORDS,
   SIMPLE_CHAT_STRONG_BUSINESS_PATTERNS,
 } from "@/agent/config/simple-chat-lexicon";
 
@@ -16,6 +17,9 @@ const SIMPLE_CHAT_KEYWORDS = Object.values(SIMPLE_CHAT_LEXICON).flat();
 const containsAny = (text: string, keywords: string[]) =>
   keywords.some((word) => text.includes(word));
 
+const shouldBypassQuestionMarkers = (text: string) =>
+  containsAny(text, SIMPLE_CHAT_QUESTION_MARKER_BYPASS_KEYWORDS);
+
 export const matchSimpleChatRule = (input: string): RuleMatch => {
   const text = input.trim().toLowerCase();
   if (!text) {
@@ -26,6 +30,9 @@ export const matchSimpleChatRule = (input: string): RuleMatch => {
   }
   if (SIMPLE_CHAT_STRONG_BUSINESS_PATTERNS.some((pattern) => pattern.test(text))) {
     return { isSimple: false, reason: "business pattern" };
+  }
+  if (shouldBypassQuestionMarkers(text)) {
+    return { isSimple: true, reason: "question marker bypass keyword" };
   }
   if (containsAny(text, SIMPLE_CHAT_QUESTION_MARKERS)) {
     return { isSimple: false, reason: "question marker" };
