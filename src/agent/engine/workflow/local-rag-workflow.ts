@@ -1,7 +1,8 @@
 import { createWorkflow, andThen } from "@voltagent/core";
-import type { Agent } from "@voltagent/core";
+import type { Agent, Tool } from "@voltagent/core";
 import { z } from "zod";
 import { runLocalRag } from "@/agent/tools/local-rag-tool";
+import { getPageIndexTools } from "@/agent/tools/pageindex-mcp";
 import { buildSkillContextPrefix } from "@/agent/skills/skill-loader";
 import { buildToolCallContext } from "@/agent/config/tool-call-policy";
 
@@ -28,6 +29,8 @@ export const createLocalRagWorkflow = ({
             needRag: z.boolean().optional(),
             // 是否用 LLM 对检索结果做 summary。
             useLlmSummary: z.boolean().optional(),
+            // 检索后端切换（vector | pageindex）。
+            ragRetriever: z.enum(["vector", "pageindex"]).optional(),
             // 用户标识（用于记忆/上下文）。
             userId: z.string().optional(),
             // 会话标识（用于连续对话）。
@@ -79,6 +82,8 @@ export const createLocalRagWorkflow = ({
             needRag: z.boolean().optional(),
             // 是否用 LLM 对检索结果做 summary。
             useLlmSummary: z.boolean().optional(),
+            // 检索后端切换（vector | pageindex）。
+            ragRetriever: z.enum(["vector", "pageindex"]).optional(),
             // 用户标识（用于记忆/上下文）。
             userId: z.string().optional(),
             // 会话标识（用于连续对话）。
@@ -125,6 +130,12 @@ export const createLocalRagWorkflow = ({
             ? `${skillContextPrefix}\n\nUser Question:\n${query}`
             : query;
         const mode = process.env.AGENT_PROXY_MODE ?? "local-rag";
+        const ragRetriever =
+          typeof data.options?.ragRetriever === "string"
+            ? data.options.ragRetriever
+            : (process.env.RAG_RETRIEVER ?? "vector").trim().toLowerCase();
+        const usePageIndex =
+          ragRetriever === "pageindex" || ragRetriever === "page-index";
         const envNeedRag =
           (process.env.NEED_RAG ?? "true").toLowerCase() !== "false";
         const needRag =
@@ -140,7 +151,12 @@ export const createLocalRagWorkflow = ({
         const reset = "\u001b[0m";
         console.log(
           `${yellow}[rag-flow] 当前分支判断${reset}`,
-          JSON.stringify({ needRag, useLlmSummary, proxyMode: mode }),
+          JSON.stringify({
+            needRag,
+            useLlmSummary,
+            proxyMode: mode,
+            ragRetriever,
+          }),
         );
         /*
          * 本地 RAG + LLM 拼接开关：
@@ -183,6 +199,54 @@ export const createLocalRagWorkflow = ({
             ? { "x-qwen-enable-thinking": String(enableThinking) }
             : undefined;
         if (needRag && (mode === "local-rag" || mode === "hybrid")) {
+          if (usePageIndex) {
+            let mcpTools: Tool<any>[] = [];
+            try {
+              mcpTools = await getPageIndexTools();
+            } catch (error) {
+              console.warn("[rag-flow] failed to load PageIndex MCP tools", error);
+            }
+            if (mcpTools.length === 0) {
+              return {
+                text: "PageIndex MCP 未就绪，请检查 MCP 进程或配置。",
+                sources: [],
+                score: null,
+                distance: null,
+                snippets: [],
+              };
+            }
+            const promptSections = [
+              "你是一个基于检索内容回答问题的助手。",
+              "规则：优先使用 PageIndex MCP 工具检索文档；只使用工具返回的内容作答，禁止编造。",
+              "若工具返回内容不足以回答问题，请直接回答“不知道”。",
+              "回答要求：简洁清晰，必要时引用页面信息。",
+              "",
+              `Question: ${data.query}`,
+              "Answer:",
+            ];
+            const basePrompt = promptSections.join("\n");
+            const prompt = skillContextPrefix
+              ? `${skillContextPrefix}\n\n${basePrompt}`
+              : basePrompt;
+            const llmResult = await agent.generateText(prompt, {
+              userId: data.options?.userId,
+              conversationId: data.options?.conversationId,
+              headers: requestHeaders,
+              tools: mcpTools,
+              context: buildToolCallContext("rag"),
+            });
+            const text =
+              typeof llmResult.text === "string" && llmResult.text.trim()
+                ? llmResult.text
+                : "I did not get a response. Please try again.";
+            return {
+              text,
+              sources: [],
+              score: null,
+              distance: null,
+              snippets: [],
+            };
+          }
           // 先走本地 RAG，判断是否“找到答案”。
           const ragResult = await runLocalRag(data.query);
           const isAnswer =

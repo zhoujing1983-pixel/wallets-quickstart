@@ -25,8 +25,9 @@ export async function GET() {
   const provider = (process.env.MODEL_PROVIDER ?? "ollama").toLowerCase();
   const thinkModels = resolveThinkModels();
   const supportsThink = model.length > 0 && thinkModels.includes(model);
+  const ragRetriever = (process.env.RAG_RETRIEVER ?? "vector").toLowerCase();
   return NextResponse.json({
     success: true,
-    data: { model, provider, supportsThink },
+    data: { model, provider, supportsThink, ragRetriever },
   });
 }

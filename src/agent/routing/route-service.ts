@@ -7,6 +7,7 @@ import { SIMPLE_CHAT_RULE_ENABLED } from "@/agent/config/simple-chat-config";
 type ChatOptions = {
   needRag?: boolean;
   useLlmSummary?: boolean;
+  ragRetriever?: "vector" | "pageindex";
   userId?: string;
   conversationId?: string;
   enableThinking?: boolean;
@@ -24,6 +25,7 @@ type WorkflowPayload = {
     options: {
       needRag: boolean;
       useLlmSummary?: boolean;
+      ragRetriever?: "vector" | "pageindex";
       userId?: string;
       conversationId?: string;
       enableThinking?: boolean;
@@ -64,6 +66,10 @@ const buildWorkflowInput = (
     typeof options?.useLlmSummary === "boolean"
       ? options.useLlmSummary
       : undefined;
+  const ragRetriever =
+    options?.ragRetriever === "pageindex" || options?.ragRetriever === "vector"
+      ? options.ragRetriever
+      : undefined;
   const userId = typeof options?.userId === "string" ? options.userId : undefined;
   const conversationId =
     typeof options?.conversationId === "string"
@@ -78,11 +84,12 @@ const buildWorkflowInput = (
     input: {
       query: input,
       options: {
-        needRag,
-        useLlmSummary,
-        userId,
-        conversationId,
-        enableThinking,
+      needRag,
+      useLlmSummary,
+      ragRetriever,
+      userId,
+      conversationId,
+      enableThinking,
       },
     },
     options: {

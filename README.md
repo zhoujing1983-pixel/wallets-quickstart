@@ -103,11 +103,23 @@ The chat widget can answer simple questions locally without VoltAgent by using a
 - Default mode: `AGENT_PROXY_MODE=local-rag` (built-in).
 - Hybrid mode: `AGENT_PROXY_MODE=hybrid` uses local RAG first, then falls back to VoltAgent when distance is above `RAG_DISTANCE_THRESHOLD`.
 - VoltAgent mode: `AGENT_PROXY_MODE=voltagent` to proxy requests to `http://localhost:3141`.
+- Retriever switch: `RAG_RETRIEVER=vector` (default) or `RAG_RETRIEVER=pageindex` to use PageIndex MCP.
 - Tool call policy / 工具调用策略：`AGENT_TOOL_CALL_POLICY=auto` 控制是否允许 LLM 调用工具（`auto`, `off`, `rag-only`）。
 - Ingest directory: set `RAG_INGEST_DIR` to point at a folder of docs (defaults to `./rag-docs`, supports md/txt/code/pdf/docx/xlsx).
 - Embeddings: `RAG_EMBEDDING_MODEL` uses the Qwen OpenAI-compatible embeddings endpoint (`QWEN_BASE_URL`, `QWEN_API_KEY`).
 - Reindex: set `RAG_FORCE_REINDEX=true` to rebuild embeddings after content changes.
 - Optional: set `LOCAL_RAG_DB_PATH` to choose a different SQLite file (defaults to `./local-rag-vec.db`).
+
+### PageIndex MCP (optional)
+Use PageIndex as the retriever backend via MCP.
+
+- Local/self-host (default): `PAGEINDEX_MCP_MODE=local`
+- Remote MCP: `PAGEINDEX_MCP_MODE=http` and `PAGEINDEX_MCP_URL=...`
+- Local dependency (recommended): `npm i -D pageindex-mcp`
+- Optional override: `PAGEINDEX_MCP_COMMAND` (default: local `node_modules/.bin/pageindex-mcp`)
+- Optional override: `PAGEINDEX_MCP_PACKAGE` (default: `pageindex-mcp`, only when command is `npx`)
+- Optional override: `PAGEINDEX_MCP_ARGS` (comma-separated args, overrides the package)
+- Optional override: `PAGEINDEX_MCP_HEADERS_JSON` (JSON object string for auth headers)
 
 ## Utility scripts
 - Create or refresh the treasury wallet used by the demo flows: `npm run treasure:wallet`

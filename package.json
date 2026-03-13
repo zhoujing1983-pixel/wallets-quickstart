@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json.schemastore.org/package.json",
+  "$schema": "./schemas/package.json",
   "name": "wallets-quickstart",
   "version": "0.1.0",
   "private": true,
@@ -72,6 +72,7 @@
     "@types/react-dom": "^19",
     "@types/react-transition-group": "^4.4.12",
     "@voltagent/cli": "^0.1.20",
+    "pageindex-mcp": "^1.0.0",
     "tailwindcss": "^4",
     "tsdown": "^0.18.3",
     "tsx": "^4.21.0",

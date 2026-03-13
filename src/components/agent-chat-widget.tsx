@@ -268,10 +268,12 @@ export function AgentChatWidget({
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
   const [useLlmSummary, setUseLlmSummary] = useState(false);
+  const [usePageIndex, setUsePageIndex] = useState(false);
   const [useThink, setUseThink] = useState(false);
   const [supportsThink, setSupportsThink] = useState(false);
   const [provider, setProvider] = useState("ollama");
@@ -281,6 +283,7 @@ export function AgentChatWidget({
   const listRef = useRef<HTMLDivElement | null>(null);
   const userIdRef = useRef<string>("");
   const conversationIdRef = useRef<string>("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const assistantAvatar = "/agent/cat-avatar.jpg";
 
   // 判断是否允许发送消息。
@@ -312,8 +315,15 @@ export function AgentChatWidget({
       "finyx-agent-llm-summary"
     );
     const thinkMode = window.localStorage.getItem("finyx-agent-think-mode");
+    const ragMode = window.localStorage.getItem("finyx-agent-rag-retriever");
     if (summaryMode === "on") {
       setUseLlmSummary(true);
+    }
+    if (ragMode === "pageindex") {
+      setUsePageIndex(true);
+    }
+    if (ragMode === "vector") {
+      setUsePageIndex(false);
     }
     if (stored) {
       try {
@@ -347,6 +357,10 @@ export function AgentChatWidget({
             typeof data?.data?.provider === "string"
               ? data.data.provider
               : "ollama";
+          const nextRetriever =
+            typeof data?.data?.ragRetriever === "string"
+              ? data.data.ragRetriever
+              : "vector";
           setProvider(nextProvider);
           setSupportsThink(supported);
           if (supported) {
@@ -358,6 +372,12 @@ export function AgentChatWidget({
             }
           } else {
             setUseThink(false);
+          }
+          const ragMode = window.localStorage.getItem(
+            "finyx-agent-rag-retriever"
+          );
+          if (!ragMode) {
+            setUsePageIndex(nextRetriever === "pageindex");
           }
         }
       } catch {
@@ -434,6 +454,7 @@ export function AgentChatWidget({
             userId: userIdRef.current,
             conversationId: conversationIdRef.current,
             useLlmSummary,
+            ragRetriever: usePageIndex ? "pageindex" : "vector",
             enableThinking: provider === "qwen" ? useThink : undefined,
           },
         }),
@@ -479,6 +500,66 @@ export function AgentChatWidget({
       ]);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const appendAssistantMessage = (content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: createId(),
+        role: "assistant",
+        content,
+        timestamp: createTimestamp(),
+      },
+    ]);
+  };
+
+  const handlePdfSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      appendAssistantMessage("只支持上传 PDF 文件。");
+      return;
+    }
+    if (!usePageIndex) {
+      appendAssistantMessage(
+        "当前未启用 PageIndex，上传仍可进行，但检索请切换到 PageIndex 模式。"
+      );
+    }
+    setIsUploading(true);
+    appendAssistantMessage(`已开始上传 PDF：${file.name}`);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/agent/pageindex/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "PDF upload failed.");
+      }
+      const result = data?.data?.result ?? {};
+      const docId =
+        typeof result?.doc_id === "string"
+          ? result.doc_id
+          : typeof result?.docId === "string"
+            ? result.docId
+            : "";
+      const followUp = docId
+        ? `索引任务已提交（doc_id: ${docId}）。等待处理完成后再提问即可。`
+        : "索引任务已提交，等待处理完成后再提问即可。";
+      appendAssistantMessage(followUp);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "PDF upload failed.";
+      appendAssistantMessage(`PDF 上传失败：${message}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -543,6 +624,20 @@ export function AgentChatWidget({
         window.localStorage.setItem(
           "finyx-agent-think-mode",
           next ? "on" : "off"
+        );
+      }
+      return next;
+    });
+  };
+
+  // 切换检索后端并持久化设置。
+  const toggleRagRetriever = () => {
+    setUsePageIndex((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          "finyx-agent-rag-retriever",
+          next ? "pageindex" : "vector"
         );
       }
       return next;
@@ -768,10 +863,19 @@ export function AgentChatWidget({
               <button
                 type="button"
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200"
-                aria-label="Add"
+                aria-label="Upload PDF"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
               >
                 <img src="/agent/plus.svg" alt="" className="h-5 w-5" />
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={handlePdfSelected}
+              />
               <textarea
                 rows={1}
                 value={input}
@@ -816,6 +920,22 @@ export function AgentChatWidget({
                   <span className="text-[11px] text-slate-500">
                     LLM Summary
                   </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleRagRetriever}
+                    className="relative h-6 w-11 rounded-full border border-slate-200 bg-slate-100 transition"
+                  >
+                    <span
+                      className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
+                        usePageIndex
+                          ? "left-6 bg-slate-900"
+                          : "left-1 bg-slate-400"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-[11px] text-slate-500">PageIndex</span>
                 </div>
                 {/* Think 模式开关 */}
                 {supportsThink ? (
