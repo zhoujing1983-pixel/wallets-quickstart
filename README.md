@@ -84,6 +84,11 @@ Deploy the Finyx Wallet Studio template to Vercel, ensuring you expose the requi
 - `scripts`: Agent scripts (run via `npm run agent:*`)
 
 ## Agent scripts
+- Runtime switch:
+  - `AGENT_FRAMEWORK=voltagent` (default): use VoltAgent workflow runtime.
+  - `AGENT_FRAMEWORK=langchain`: use standalone LangChain workflow server.
+- Unified runtime process: `npm run agent:runtime`
+- Start LangChain server directly: `npm run agent:langchain`
 - Start the local agent: `npm run agent:start`
 - Start the OpenAI agent: `npm run agent:openai`
 - Watch mode for local agent: `npm run agent:dev`

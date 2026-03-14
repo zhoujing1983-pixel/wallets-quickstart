@@ -3,48 +3,30 @@ import { formatReturnWorkflowResult } from "@/agent/routing/formatters/return-wo
 import { formatFlightWorkflowResult } from "@/agent/routing/formatters/flight-workflow";
 import { matchSimpleChatRule } from "@/agent/config/simple-chat-rule";
 import { SIMPLE_CHAT_RULE_ENABLED } from "@/agent/config/simple-chat-config";
+import { runtime } from "@/agent/runtime/factory";
+import type {
+  ChatOptions,
+  WorkflowPayload,
+  WorkflowResponse,
+} from "@/agent/runtime/types";
 
-type ChatOptions = {
-  needRag?: boolean;
-  useLlmSummary?: boolean;
-  ragRetriever?: "vector" | "pageindex";
-  userId?: string;
-  conversationId?: string;
-  enableThinking?: boolean;
-};
-
+/**
+ * routeAgentChat 的输入结构。
+ * - input: 用户原始问题；
+ * - options: 前端可选开关；
+ * - headerEnableThinking: 兼容旧客户端请求头透传。
+ */
 type RouteServiceInput = {
   input: string;
   options?: ChatOptions;
   headerEnableThinking?: boolean;
 };
 
-type WorkflowPayload = {
-  input: {
-    query: string;
-    options: {
-      needRag: boolean;
-      useLlmSummary?: boolean;
-      ragRetriever?: "vector" | "pageindex";
-      userId?: string;
-      conversationId?: string;
-      enableThinking?: boolean;
-    };
-  };
-  options: {
-    userId?: string;
-    conversationId?: string;
-  };
-};
-
-type WorkflowResponse = {
-  success?: boolean;
-  error?: string;
-  data?: {
-    result?: unknown;
-  };
-};
-
+/**
+ * 统一路由日志打印函数。
+ * @param message 日志主信息
+ * @param meta 可选结构化元信息
+ */
 const logRouting = (message: string, meta?: Record<string, unknown>) => {
   if (meta) {
     console.log(`[routing] ${message}`, meta);
@@ -53,6 +35,11 @@ const logRouting = (message: string, meta?: Record<string, unknown>) => {
   }
 };
 
+/**
+ * 组装标准化 workflow 输入载荷。
+ * - 融合环境变量默认值、请求体 options、旧请求头兼容字段；
+ * - 保证下游 workflow 接收到一致结构。
+ */
 const buildWorkflowInput = (
   input: string,
   options: ChatOptions | undefined,
@@ -84,12 +71,12 @@ const buildWorkflowInput = (
     input: {
       query: input,
       options: {
-      needRag,
-      useLlmSummary,
-      ragRetriever,
-      userId,
-      conversationId,
-      enableThinking,
+        needRag,
+        useLlmSummary,
+        ragRetriever,
+        userId,
+        conversationId,
+        enableThinking,
       },
     },
     options: {
@@ -99,25 +86,21 @@ const buildWorkflowInput = (
   };
 };
 
+/**
+ * 执行指定 workflow。
+ * - 通过 runtime 工厂自动分发到 voltagent/langchain；
+ * - 统一处理失败日志与异常抛出。
+ */
 const executeWorkflow = async (
   workflowId: string,
   payload: WorkflowPayload
 ): Promise<WorkflowResponse> => {
   const start = Date.now();
-  const res = await fetch(
-    `http://localhost:3141/workflows/${workflowId}/execute`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
-  const data = (await res.json()) as WorkflowResponse;
-  if (!res.ok || !data?.success) {
+  const data = await runtime.executeWorkflow(workflowId, payload);
+  if (!data?.success) {
     const message = data?.error || "Workflow request failed.";
     logRouting("workflow failed", {
       workflowId,
-      status: res.status,
       durationMs: Date.now() - start,
       error: message,
     });
@@ -125,12 +108,19 @@ const executeWorkflow = async (
   }
   logRouting("workflow success", {
     workflowId,
-    status: res.status,
     durationMs: Date.now() - start,
   });
   return data;
 };
 
+/**
+ * 决策当前请求应走哪个 workflow。
+ * 决策顺序：
+ * 1) 关键词硬匹配；
+ * 2) 简单闲聊规则；
+ * 3) routing-workflow 模型判定；
+ * 4) 兜底 local-rag-workflow。
+ */
 const resolveWorkflowId = async (
   input: string,
   payload: WorkflowPayload
@@ -208,6 +198,13 @@ const resolveWorkflowId = async (
   return { workflowId: "local-rag-workflow" };
 };
 
+/**
+ * Agent 聊天总入口：
+ * - 先决策 workflow；
+ * - 执行 workflow；
+ * - 按 workflow 类型做结果格式化；
+ * - 最终返回前端统一结构（text/sources/snippets）。
+ */
 export const routeAgentChat = async ({
   input,
   options,

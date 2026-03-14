@@ -807,8 +807,10 @@ export default function AgentManagementPage() {
           className="rounded-[32px] overflow-hidden shadow-[0_30px_80px_rgba(5,12,41,0.15)]"
           style={{
             backgroundImage: "url('/agent/agent-banner.jpg')",
-            backgroundSize: "cover",
-            backgroundPosition: "center 25%",
+            backgroundSize: "contain",
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "center",
+            backgroundColor: "#0f172a",
           }}
         >
           <div className="flex flex-col gap-4 px-6 py-10 backdrop-brightness-75">
