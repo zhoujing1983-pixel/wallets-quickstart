@@ -1,7 +1,10 @@
 import "dotenv/config";
 import { createServer } from "node:http";
 import { URL } from "node:url";
-import { executeLangChainWorkflow } from "@/agent/runtime/langchain-executor";
+import {
+  executeLangChainWorkflow,
+  executeLangChainWorkflowStream,
+} from "@/agent/runtime/langchain-executor";
 import type { WorkflowPayload } from "@/agent/runtime/types";
 
 // LangChain 独立服务监听端口，默认 3142。
@@ -23,6 +26,22 @@ const writeJson = (
   res.end(JSON.stringify(payload));
 };
 
+const writeSseHeaders = (res: import("node:http").ServerResponse) => {
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+};
+
+const writeSseEvent = (
+  res: import("node:http").ServerResponse,
+  event: string,
+  payload: unknown
+) => {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
 /**
  * 读取并解析请求体。
  * - 仅处理 JSON；
@@ -40,7 +59,8 @@ const readBody = async (req: import("node:http").IncomingMessage) => {
 /**
  * LangChain workflow HTTP 服务：
  * - GET /health: 健康检查；
- * - POST /workflows/:workflowId/execute: 执行指定工作流。
+ * - POST /workflows/:workflowId/execute: 执行指定工作流；
+ * - POST /workflows/:workflowId/execute/stream: 以 SSE 方式流式执行工作流。
  */
 const server = createServer(async (req, res) => {
   try {
@@ -59,6 +79,42 @@ const server = createServer(async (req, res) => {
       const payload = (await readBody(req)) as WorkflowPayload;
       const result = await executeLangChainWorkflow(workflowId, payload);
       writeJson(res, 200, result);
+      return;
+    }
+
+    const workflowStreamMatch = requestUrl.pathname.match(
+      /^\/workflows\/([^/]+)\/execute\/stream$/
+    );
+    if (method === "POST" && workflowStreamMatch) {
+      const workflowId = decodeURIComponent(workflowStreamMatch[1]);
+      const payload = (await readBody(req)) as WorkflowPayload;
+      writeSseHeaders(res);
+      try {
+        await executeLangChainWorkflowStream(
+          workflowId,
+          payload,
+          (event) => {
+            if (event.type === "tool_progress") {
+              writeSseEvent(res, "tool_progress", event.data);
+              return;
+            }
+            if (event.type === "text_delta") {
+              writeSseEvent(res, "text_delta", { delta: event.delta });
+              return;
+            }
+            if (event.type === "final") {
+              writeSseEvent(res, "final", { result: event.result });
+            }
+          }
+        );
+        writeSseEvent(res, "done", { ok: true });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "LangChain stream error.";
+        writeSseEvent(res, "error", { error: message });
+      } finally {
+        res.end();
+      }
       return;
     }
 

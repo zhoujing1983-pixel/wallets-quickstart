@@ -1,3 +1,9 @@
+/*
+ * 文件作用：工具层实现：封装外部能力调用（航班、RAG、MCP 等）并提供统一工具输入输出。
+ * 调用链阶段：能力执行阶段（检索/工具/数据解析）
+ * 调用链关系：上游：src/agent/runtime/langchain/flight-runtime.ts::duffel_search_offers 工具、src/agent/engine/workflow/flight-booking-workflow.ts；下游：Duffel HTTP API 调用。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import { tool } from "@voltagent/core";
 import { z } from "zod";
 

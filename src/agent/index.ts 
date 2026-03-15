@@ -1,4 +1,10 @@
 /*
+ * 文件作用：Agent 包对外入口占位，用于统一暴露 agent/workflow 能力。
+ * 调用链阶段：启动与导出阶段（包入口）。
+ * 调用链关系：上游是业务模块的 import；下游通常转向 engine/runtime 的实际实现。
+ * 维护说明：该入口应保持稳定导出语义，避免上层 import 路径频繁变化。
+ */
+/*
  * Agent 模块统一出口占位：
  * - 预留给上层统一导出 agent、workflows 等能力；
  * - 目前实际实现位于 engine/voltagent-engine.ts；

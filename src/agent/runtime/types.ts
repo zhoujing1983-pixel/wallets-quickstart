@@ -1,3 +1,9 @@
+/*
+ * 文件作用：运行时契约定义：声明 payload/response/stream 等跨框架统一类型。
+ * 调用链阶段：运行时决策阶段（框架选择与契约约束）
+ * 调用链关系：上游：src/agent/routing/route-service.ts::buildWorkflowInput()；下游：src/agent/runtime/*-provider.ts::executeWorkflow(...) 与 executor 层方法签名。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 /**
  * 聊天请求可选参数：
  * - 由前端或上层 API 透传；
@@ -10,6 +16,7 @@ export type ChatOptions = {
   userId?: string;
   conversationId?: string;
   enableThinking?: boolean;
+  streamAnswer?: boolean;
 };
 
 /**
@@ -28,6 +35,7 @@ export type WorkflowPayload = {
       userId?: string;
       conversationId?: string;
       enableThinking?: boolean;
+      streamAnswer?: boolean;
     };
   };
   options: {
@@ -59,4 +67,8 @@ export type AgentWorkflowRuntime = {
     workflowId: string,
     payload: WorkflowPayload
   ) => Promise<WorkflowResponse>;
+  executeWorkflowStream?: (
+    workflowId: string,
+    payload: WorkflowPayload
+  ) => Promise<Response>;
 };

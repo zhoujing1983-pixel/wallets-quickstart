@@ -1,3 +1,9 @@
+/*
+ * 文件作用：检索层实现：负责向向量库/检索后端查询上下文片段并返回统一检索结果。
+ * 调用链阶段：能力执行阶段（检索/工具/数据解析）
+ * 调用链关系：上游：src/agent/runtime/langchain-executor.ts::executeLocalRagWorkflow()、src/agent/tools/local-rag-tool.ts::runLocalRag()；下游：src/agent/retrievers/sqlite-vector-store.ts::query()/src/agent/retrievers/pg-vector-store.ts::query()。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import path from "path";
 import fs from "node:fs";
 import crypto from "node:crypto";

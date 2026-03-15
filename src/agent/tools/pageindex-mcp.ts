@@ -1,3 +1,9 @@
+/*
+ * 文件作用：工具层实现：封装外部能力调用（航班、RAG、MCP 等）并提供统一工具输入输出。
+ * 调用链阶段：能力执行阶段（检索/工具/数据解析）
+ * 调用链关系：上游：src/agent/engine/workflow/direct-chat-workflow.ts::createDirectChatWorkflow()（工具装配阶段）；下游：src/agent/tools/pageindex-mcp.ts::buildPageIndexServerConfig() 与 MCPConfiguration 构造流程。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import path from "node:path";
 import { MCPConfiguration } from "@voltagent/core";
 

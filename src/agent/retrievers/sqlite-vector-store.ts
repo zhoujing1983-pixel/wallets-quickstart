@@ -1,3 +1,9 @@
+/*
+ * 文件作用：检索层实现：负责向向量库/检索后端查询上下文片段并返回统一检索结果。
+ * 调用链阶段：能力执行阶段（检索/工具/数据解析）
+ * 调用链关系：上游：src/agent/retrievers/RAG-local-retriever.ts::queryLocalRag()；下游：sqlite DB 查询方法（类 SqliteVectorStore::query/upsert）。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import path from "path";
 import Database from "better-sqlite3";
 import { load as loadSqliteVec } from "sqlite-vec";

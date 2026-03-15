@@ -275,6 +275,7 @@ export function AgentChatWidget({
   const [useLlmSummary, setUseLlmSummary] = useState(false);
   const [usePageIndex, setUsePageIndex] = useState(false);
   const [useThink, setUseThink] = useState(false);
+  const [useStreamAnswer, setUseStreamAnswer] = useState(true);
   const [supportsThink, setSupportsThink] = useState(false);
   const [provider, setProvider] = useState("ollama");
   const [expandedThinks, setExpandedThinks] = useState<Record<string, boolean>>(
@@ -316,6 +317,7 @@ export function AgentChatWidget({
     );
     const thinkMode = window.localStorage.getItem("finyx-agent-think-mode");
     const ragMode = window.localStorage.getItem("finyx-agent-rag-retriever");
+    const streamMode = window.localStorage.getItem("finyx-agent-stream-answer");
     if (summaryMode === "on") {
       setUseLlmSummary(true);
     }
@@ -324,6 +326,9 @@ export function AgentChatWidget({
     }
     if (ragMode === "vector") {
       setUsePageIndex(false);
+    }
+    if (streamMode === "off") {
+      setUseStreamAnswer(false);
     }
     if (stored) {
       try {
@@ -422,6 +427,35 @@ export function AgentChatWidget({
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, isOpen]);
 
+  const upsertAssistantMessage = (
+    id: string,
+    patch: Partial<ChatMessage> & { content: string }
+  ) => {
+    setMessages((prev) => {
+      const index = prev.findIndex((item) => item.id === id);
+      if (index < 0) {
+        return [
+          ...prev,
+          {
+            id,
+            role: "assistant",
+            content: patch.content,
+            timestamp: patch.timestamp ?? createTimestamp(),
+            offers: patch.offers,
+            snippets: patch.snippets,
+            sources: patch.sources,
+          },
+        ];
+      }
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        ...patch,
+      };
+      return next;
+    });
+  };
+
   // 发送用户输入并追加机器人回复。
   const sendMessage = async (overridePrompt?: string) => {
     const prompt = (overridePrompt ?? input).trim();
@@ -443,12 +477,17 @@ export function AgentChatWidget({
       timestamp: createTimestamp(),
     };
     setMessages((prev) => [...prev, userMessage]);
+    const progressId = createId();
+    upsertAssistantMessage(progressId, {
+      content: "正在思考",
+    });
     setIsSending(true);
     try {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          stream: useStreamAnswer,
           input: requestPrompt,
           options: {
             userId: userIdRef.current,
@@ -456,48 +495,171 @@ export function AgentChatWidget({
             useLlmSummary,
             ragRetriever: usePageIndex ? "pageindex" : "vector",
             enableThinking: provider === "qwen" ? useThink : undefined,
+            streamAnswer: useStreamAnswer,
           },
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || "Agent request failed.");
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok) {
+        let message = "Agent request failed.";
+        try {
+          const data = await res.json();
+          if (typeof data?.error === "string") {
+            message = data.error;
+          }
+        } catch {
+          // Ignore non-JSON error body.
+        }
+        throw new Error(message);
       }
-      const replyText =
-        typeof data?.data?.text === "string" && data.data.text.trim().length > 0
-          ? data.data.text
-          : "I did not get a response. Please try again.";
-      const offers = extractOffers(data?.data?.offers);
-      const snippets = Array.isArray(data?.data?.snippets)
-        ? (data.data.snippets as RagSnippet[])
-        : undefined;
-      const sources = Array.isArray(data?.data?.sources)
-        ? (data.data.sources as RagSource[])
-        : undefined;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: createId(),
-          role: "assistant",
+
+      if (useStreamAnswer && contentType.includes("text/event-stream") && res.body) {
+        const decoder = new TextDecoder();
+        const reader = res.body.getReader();
+        let buffer = "";
+        let finalPayload: Record<string, unknown> | null = null;
+        let streamedText = "";
+        const progressLines: string[] = [];
+        const renderProgress = () => {
+          const visible = progressLines.slice(-4);
+          const lines =
+            visible.length > 0
+              ? visible.map((line, index) => `${index + 1}. ${line}`).join("\n")
+              : "";
+          upsertAssistantMessage(progressId, {
+            content: lines ? `正在思考\n${lines}` : "正在思考",
+          });
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const splitIndex = buffer.indexOf("\n\n");
+            if (splitIndex < 0) break;
+            const block = buffer.slice(0, splitIndex);
+            buffer = buffer.slice(splitIndex + 2);
+            const lines = block.split("\n");
+            let eventName = "message";
+            const dataLines: string[] = [];
+            for (const line of lines) {
+              if (line.startsWith("event:")) {
+                eventName = line.slice(6).trim();
+                continue;
+              }
+              if (line.startsWith("data:")) {
+                dataLines.push(line.slice(5).trim());
+              }
+            }
+            if (dataLines.length === 0) continue;
+            const rawData = dataLines.join("\n");
+            let parsed: unknown = rawData;
+            try {
+              parsed = JSON.parse(rawData);
+            } catch {
+              // Keep raw text payload.
+            }
+            if (eventName === "tool_progress") {
+              const record =
+                parsed && typeof parsed === "object"
+                  ? (parsed as Record<string, unknown>)
+                  : null;
+              const message =
+                record && typeof record.message === "string"
+                  ? record.message
+                  : "处理中...";
+              progressLines.push(message);
+              renderProgress();
+              continue;
+            }
+            if (eventName === "text_delta") {
+              const record =
+                parsed && typeof parsed === "object"
+                  ? (parsed as Record<string, unknown>)
+                  : null;
+              const delta =
+                record && typeof record.delta === "string" ? record.delta : "";
+              if (delta) {
+                streamedText += delta;
+                upsertAssistantMessage(progressId, {
+                  content: streamedText,
+                });
+              }
+              continue;
+            }
+            if (eventName === "final") {
+              const record =
+                parsed && typeof parsed === "object"
+                  ? (parsed as Record<string, unknown>)
+                  : {};
+              const dataField =
+                record.data && typeof record.data === "object"
+                  ? (record.data as Record<string, unknown>)
+                  : record;
+              finalPayload = dataField;
+              continue;
+            }
+            if (eventName === "error") {
+              const record =
+                parsed && typeof parsed === "object"
+                  ? (parsed as Record<string, unknown>)
+                  : null;
+              throw new Error(
+                record && typeof record.error === "string"
+                  ? record.error
+                  : "Agent stream request failed."
+              );
+            }
+          }
+        }
+
+        const replyText =
+          typeof finalPayload?.text === "string" && finalPayload.text.trim()
+            ? finalPayload.text
+            : "I did not get a response. Please try again.";
+        const offers = extractOffers(finalPayload?.offers);
+        const snippets = Array.isArray(finalPayload?.snippets)
+          ? (finalPayload.snippets as RagSnippet[])
+          : undefined;
+        const sources = Array.isArray(finalPayload?.sources)
+          ? (finalPayload.sources as RagSource[])
+          : undefined;
+        upsertAssistantMessage(progressId, {
           content: replyText,
-          timestamp: createTimestamp(),
           offers: offers.length > 0 ? offers : undefined,
           snippets,
           sources,
-        },
-      ]);
+        });
+      } else {
+        const data = await res.json();
+        if (!data?.success) {
+          throw new Error(data?.error || "Agent request failed.");
+        }
+        const replyText =
+          typeof data?.data?.text === "string" && data.data.text.trim().length > 0
+            ? data.data.text
+            : "I did not get a response. Please try again.";
+        const offers = extractOffers(data?.data?.offers);
+        const snippets = Array.isArray(data?.data?.snippets)
+          ? (data.data.snippets as RagSnippet[])
+          : undefined;
+        const sources = Array.isArray(data?.data?.sources)
+          ? (data.data.sources as RagSource[])
+          : undefined;
+        upsertAssistantMessage(progressId, {
+          content: replyText,
+          offers: offers.length > 0 ? offers : undefined,
+          snippets,
+          sources,
+        });
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Agent request failed.";
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: createId(),
-          role: "assistant",
-          content: `Sorry, I could not reach the agent. ${message}`,
-          timestamp: createTimestamp(),
-        },
-      ]);
+      upsertAssistantMessage(progressId, {
+        content: `Sorry, I could not reach the agent. ${message}`,
+      });
     } finally {
       setIsSending(false);
     }
@@ -630,6 +792,20 @@ export function AgentChatWidget({
     });
   };
 
+  // 切换流式回答并持久化设置。
+  const toggleStreamAnswer = () => {
+    setUseStreamAnswer((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(
+          "finyx-agent-stream-answer",
+          next ? "on" : "off"
+        );
+      }
+      return next;
+    });
+  };
+
   // 切换检索后端并持久化设置。
   const toggleRagRetriever = () => {
     setUsePageIndex((prev) => {
@@ -742,6 +918,15 @@ export function AgentChatWidget({
                           const hasOffers =
                             Array.isArray(message.offers) &&
                             message.offers.length > 0;
+                          const isThinkingBubble =
+                            answer === "正在思考" ||
+                            answer.startsWith("正在思考\n");
+                          const thinkingLines = isThinkingBubble
+                            ? answer
+                                .split("\n")
+                                .slice(1)
+                                .filter((line) => line.trim().length > 0)
+                            : [];
                           return (
                             <>
                               {/* think 模式开关与面板 */}
@@ -763,9 +948,33 @@ export function AgentChatWidget({
                                   {think}
                                 </div>
                               ) : null}
-                              {answer
-                                ? renderAnswerWithSnippets(answer, message.snippets)
-                                : null}
+                              {isThinkingBubble ? (
+                                <div className="text-slate-700">
+                                  <span>正在思考</span>
+                                  <span className="ml-1 inline-flex items-end gap-[2px]">
+                                    <span className="inline-block w-[4px] animate-bounce text-slate-500">.</span>
+                                    <span
+                                      className="inline-block w-[4px] animate-bounce text-slate-500"
+                                      style={{ animationDelay: "120ms" }}
+                                    >
+                                      .
+                                    </span>
+                                    <span
+                                      className="inline-block w-[4px] animate-bounce text-slate-500"
+                                      style={{ animationDelay: "240ms" }}
+                                    >
+                                      .
+                                    </span>
+                                  </span>
+                                  {thinkingLines.length > 0 ? (
+                                    <div className="mt-2 whitespace-pre-wrap text-[12px] text-slate-500">
+                                      {thinkingLines.join("\n")}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : answer ? (
+                                renderAnswerWithSnippets(answer, message.snippets)
+                              ) : null}
                               {renderSourcesList(
                                 message.sources,
                                 message.snippets
@@ -833,29 +1042,6 @@ export function AgentChatWidget({
                 </div>
               </div>
             ))}
-            {/* 发送中的加载提示 */}
-            {isSending ? (
-              <div className="flex items-start gap-2">
-                <div
-                  className="h-10 w-10 rounded-full bg-cover bg-center ring-1 ring-white shadow-sm"
-                  style={{ backgroundImage: `url(${assistantAvatar})` }}
-                  aria-hidden="true"
-                />
-                <div className="mr-auto w-fit rounded-[22px] bg-white px-4 py-3 text-xs text-slate-500 shadow-[0_10px_24px_rgba(15,23,42,0.08)] border border-slate-100">
-                  <div className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full bg-slate-400 animate-bounce" />
-                    <span
-                      className="h-2 w-2 rounded-full bg-slate-400 animate-bounce"
-                      style={{ animationDelay: "120ms" }}
-                    />
-                    <span
-                      className="h-2 w-2 rounded-full bg-slate-400 animate-bounce"
-                      style={{ animationDelay: "240ms" }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
           {/* 输入区与底部操作 */}
           <div className="mt-auto border-t border-slate-100 bg-white px-4 py-4">
@@ -936,6 +1122,22 @@ export function AgentChatWidget({
                     />
                   </button>
                   <span className="text-[11px] text-slate-500">PageIndex</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleStreamAnswer}
+                    className="relative h-6 w-11 rounded-full border border-slate-200 bg-slate-100 transition"
+                  >
+                    <span
+                      className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition ${
+                        useStreamAnswer
+                          ? "left-6 bg-slate-900"
+                          : "left-1 bg-slate-400"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-[11px] text-slate-500">Stream</span>
                 </div>
                 {/* Think 模式开关 */}
                 {supportsThink ? (

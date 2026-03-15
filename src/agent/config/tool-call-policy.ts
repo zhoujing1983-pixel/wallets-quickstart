@@ -1,4 +1,10 @@
 /*
+ * 文件作用：配置与规则定义：集中维护路由、简聊、工具策略等静态配置与判定规则。
+ * 调用链阶段：配置解析阶段（请求进入前）
+ * 调用链关系：上游：workflow 执行层调用 src/agent/config/tool-call-policy.ts::buildToolCallContext()/buildToolCallContextWithDisabled()；下游：src/agent/config/tool-call-policy.ts::resolveToolCallTools() 向执行器返回可用工具列表。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
+/*
  * 工具调用策略配置：
  * - 统一控制 Agent 是否允许“自行”调用工具；
  * - 通过上下文 ragMode 判断是否允许工具调用，覆盖静态工具的默认启用行为。

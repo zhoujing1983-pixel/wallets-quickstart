@@ -1,4 +1,10 @@
 /*
+ * 文件作用：检索层实现：负责向向量库/检索后端查询上下文片段并返回统一检索结果。
+ * 调用链阶段：能力执行阶段（检索/工具/数据解析）
+ * 调用链关系：上游：src/agent/retrievers/sqlite-vector-store.ts::implements VectorStore、src/agent/retrievers/pg-vector-store.ts::implements VectorStore；下游：被 RAG-local-retriever 统一抽象调用。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
+/*
  * VectorStore 抽象接口：
  * - 统一 pg / sqlite / ES / Qdrant / Milvus 等向量后端的调用形态；
  * - score 统一语义：值越大越相关；

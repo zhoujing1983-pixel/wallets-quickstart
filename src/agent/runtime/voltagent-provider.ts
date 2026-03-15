@@ -1,8 +1,11 @@
+/*
+ * 文件作用：VoltAgent provider 适配层：把统一 runtime 调用转发到 VoltAgent server HTTP 接口。
+ * 调用链阶段：运行时传输阶段（统一调用 -> HTTP）
+ * 调用链关系：上游：src/agent/runtime/factory.ts::runtime.executeWorkflow()；下游：src/agent/runtime/voltagent-executor.ts::executeVoltagentWorkflow()。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import type { AgentWorkflowRuntime, WorkflowPayload, WorkflowResponse } from "@/agent/runtime/types";
-
-// VoltAgent workflow 服务地址（与现有 3141 端口约定保持兼容）。
-const VOLTAGENT_BASE_URL =
-  process.env.VOLTAGENT_BASE_URL?.trim() || "http://localhost:3141";
+import { executeVoltagentWorkflow } from "@/agent/runtime/voltagent-executor";
 
 /**
  * 创建 VoltAgent 运行时适配器。
@@ -19,19 +22,6 @@ export const createVoltagentRuntime = (): AgentWorkflowRuntime => ({
   executeWorkflow: async (
     workflowId: string,
     payload: WorkflowPayload
-  ): Promise<WorkflowResponse> => {
-    const res = await fetch(
-      `${VOLTAGENT_BASE_URL}/workflows/${workflowId}/execute`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
-    const data = (await res.json()) as WorkflowResponse;
-    if (!res.ok || !data?.success) {
-      throw new Error(data?.error || "Workflow request failed.");
-    }
-    return data;
-  },
+  ): Promise<WorkflowResponse> =>
+    executeVoltagentWorkflow(workflowId, payload),
 });

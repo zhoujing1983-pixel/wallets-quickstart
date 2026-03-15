@@ -1,4 +1,10 @@
 /*
+ * 文件作用：VoltAgent 核心引擎：组装模型、memory、tools、workflow 与 hooks，产出可执行 agent/workflows。
+ * 调用链阶段：VoltAgent 执行阶段（workflow 定义与引擎装配）
+ * 调用链关系：上游：scripts/voltagentopenai.ts::import { agent, workflows }；下游：src/agent/engine/workflow/*.ts::create*Workflow() 与 createRoutingAgent()。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
+/*
  * VoltAgent Engine 总览：
  * - 负责初始化模型 Provider、工具、Memory、以及路由/业务 Workflow；
  * - 通过一层 fetch 包装实现日志与脱敏，统一采集 LLM 请求/响应；

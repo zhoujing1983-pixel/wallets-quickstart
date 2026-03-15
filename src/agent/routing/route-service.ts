@@ -1,3 +1,9 @@
+/*
+ * 文件作用：聊天请求的总编排入口：构建 payload、选择 workflow、调用 runtime、格式化回包，并处理 stream/non-stream 分支。
+ * 调用链阶段：路由与编排阶段（API 入站后）
+ * 调用链关系：上游：src/app/api/agent/chat/route.ts::POST()；下游：src/agent/runtime/factory.ts::runtime.executeWorkflow()/executeWorkflowStream()、src/agent/routing/formatters/*.ts::format*WorkflowResult()。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import { matchKeywordRoute } from "@/agent/routing/route-selector";
 import { formatReturnWorkflowResult } from "@/agent/routing/formatters/return-workflow";
 import { formatFlightWorkflowResult } from "@/agent/routing/formatters/flight-workflow";
@@ -20,6 +26,11 @@ type RouteServiceInput = {
   input: string;
   options?: ChatOptions;
   headerEnableThinking?: boolean;
+};
+
+type UpstreamSseEvent = {
+  event: string;
+  data: unknown;
 };
 
 /**
@@ -66,6 +77,10 @@ const buildWorkflowInput = (
     typeof options?.enableThinking === "boolean"
       ? options.enableThinking
       : headerEnableThinking;
+  const streamAnswer =
+    typeof options?.streamAnswer === "boolean"
+      ? options.streamAnswer
+      : undefined;
 
   return {
     input: {
@@ -77,6 +92,7 @@ const buildWorkflowInput = (
         userId,
         conversationId,
         enableThinking,
+        streamAnswer,
       },
     },
     options: {
@@ -111,6 +127,100 @@ const executeWorkflow = async (
     durationMs: Date.now() - start,
   });
   return data;
+};
+
+/**
+ * 统一格式化 workflow 输出，保证聊天接口返回结构稳定。
+ */
+const formatWorkflowResult = (
+  workflowId: string,
+  result: Record<string, unknown>,
+  durationMs: number
+) => {
+  if (workflowId === "direct-chat-workflow") {
+    const replyText = typeof result.text === "string" ? result.text : "";
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+    console.log(`${red}[routing] direct-chat reply${reset}`, {
+      workflowId,
+      durationMs,
+      reply: replyText,
+    });
+  }
+
+  if (workflowId === "return-request-workflow") {
+    const formatted = formatReturnWorkflowResult(result as any);
+    logRouting("response formatted", {
+      workflowId,
+      durationMs,
+    });
+    return formatted;
+  }
+  if (workflowId === "flight-booking-workflow") {
+    const formatted = formatFlightWorkflowResult(result as any);
+    logRouting("response formatted", {
+      workflowId,
+      durationMs,
+    });
+    return formatted;
+  }
+
+  const sources = Array.isArray(result.sources) ? result.sources : [];
+  const snippets = Array.isArray(result.snippets) ? result.snippets : [];
+  const baseText = typeof result.text === "string" ? result.text : "";
+  const response = {
+    text: baseText,
+    sources,
+    snippets,
+  };
+  logRouting("response ready", {
+    workflowId,
+    durationMs,
+  });
+  return response;
+};
+
+const encodeSse = (event: string, data: unknown) =>
+  `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+const parseUpstreamSse = async function* (
+  stream: ReadableStream<Uint8Array>
+): AsyncGenerator<UpstreamSseEvent> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    while (true) {
+      const splitIndex = buffer.indexOf("\n\n");
+      if (splitIndex < 0) break;
+      const rawEvent = buffer.slice(0, splitIndex);
+      buffer = buffer.slice(splitIndex + 2);
+      const lines = rawEvent.split("\n");
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          event = line.slice(6).trim();
+          continue;
+        }
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trim());
+        }
+      }
+      if (dataLines.length === 0) continue;
+      const rawData = dataLines.join("\n");
+      let parsed: unknown = rawData;
+      try {
+        parsed = JSON.parse(rawData);
+      } catch {
+        // Keep raw text when JSON parsing fails.
+      }
+      yield { event, data: parsed };
+    }
+  }
 };
 
 /**
@@ -237,53 +347,123 @@ export const routeAgentChat = async ({
     throw new Error("Workflow result missing.");
   }
 
-  if (workflowId === "direct-chat-workflow") {
-    const replyText =
-      result && typeof result === "object" && typeof (result as any).text === "string"
-        ? (result as any).text
-        : "";
-    const red = "\x1b[31m";
-    const reset = "\x1b[0m";
-    console.log(`${red}[routing] direct-chat reply${reset}`, {
-      workflowId,
-      durationMs: Date.now() - start,
-      reply: replyText,
-    });
-  }
-
-  if (workflowId === "return-request-workflow") {
-    const formatted = formatReturnWorkflowResult(result as any);
-    logRouting("response formatted", {
-      workflowId,
-      durationMs: Date.now() - start,
-    });
-    return formatted;
-  }
-  if (workflowId === "flight-booking-workflow") {
-    const formatted = formatFlightWorkflowResult(result as any);
-    logRouting("response formatted", {
-      workflowId,
-      durationMs: Date.now() - start,
-    });
-    return formatted;
-  }
-
-  const sources = Array.isArray((result as any).sources)
-    ? (result as any).sources
-    : [];
-  const snippets = Array.isArray((result as any).snippets)
-    ? (result as any).snippets
-    : [];
-  const baseText =
-    typeof (result as any).text === "string" ? (result as any).text : "";
-  const response = {
-    text: baseText,
-    sources,
-    snippets,
-  };
-  logRouting("response ready", {
+  return formatWorkflowResult(
     workflowId,
-    durationMs: Date.now() - start,
+    result as Record<string, unknown>,
+    Date.now() - start
+  );
+};
+
+/**
+ * Agent 聊天流式入口（SSE）：
+ * - 与 routeAgentChat 使用同一套 workflow 路由决策；
+ * - 对上游 LangChain stream 事件做透传（tool_progress）；
+ * - 在 final 事件处复用 formatter，确保前端拿到统一结构。
+ */
+export const routeAgentChatStream = ({
+  input,
+  options,
+  headerEnableThinking,
+}: RouteServiceInput) => {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start: async (controller) => {
+      const start = Date.now();
+      try {
+        const payload = buildWorkflowInput(input, options, headerEnableThinking);
+        const routingDecision = await resolveWorkflowId(input, payload);
+        const { workflowId, directText } = routingDecision;
+        if (workflowId === "direct-chat-workflow" && directText) {
+          const finalData = { text: directText, sources: [], snippets: [] };
+          controller.enqueue(
+            encoder.encode(encodeSse("final", { workflowId, data: finalData }))
+          );
+          controller.enqueue(encoder.encode(encodeSse("done", { ok: true })));
+          controller.close();
+          return;
+        }
+        logRouting("executing workflow(stream)", { workflowId });
+        if (runtime.executeWorkflowStream) {
+          const upstream = await runtime.executeWorkflowStream(workflowId, payload);
+          if (!upstream.body) {
+            throw new Error("Workflow stream body missing.");
+          }
+          for await (const evt of parseUpstreamSse(upstream.body)) {
+            if (evt.event === "tool_progress") {
+              controller.enqueue(encoder.encode(encodeSse("tool_progress", evt.data)));
+              continue;
+            }
+            if (evt.event === "text_delta") {
+              controller.enqueue(encoder.encode(encodeSse("text_delta", evt.data)));
+              continue;
+            }
+            if (evt.event === "final") {
+              const finalPayload =
+                evt.data && typeof evt.data === "object"
+                  ? (evt.data as Record<string, unknown>)
+                  : {};
+              const rawResult =
+                finalPayload.result && typeof finalPayload.result === "object"
+                  ? (finalPayload.result as Record<string, unknown>)
+                  : {};
+              const formatted = formatWorkflowResult(
+                workflowId,
+                rawResult,
+                Date.now() - start
+              );
+              controller.enqueue(
+                encoder.encode(
+                  encodeSse("final", {
+                    workflowId,
+                    data: formatted,
+                  })
+                )
+              );
+              continue;
+            }
+            if (evt.event === "error") {
+              const detail =
+                evt.data && typeof evt.data === "object"
+                  ? (evt.data as Record<string, unknown>)
+                  : { error: String(evt.data ?? "Workflow stream failed.") };
+              controller.enqueue(encoder.encode(encodeSse("error", detail)));
+              controller.close();
+              return;
+            }
+          }
+          controller.enqueue(encoder.encode(encodeSse("done", { ok: true })));
+          controller.close();
+          return;
+        }
+
+        const workflowRes = await executeWorkflow(workflowId, payload);
+        const result = workflowRes?.data?.result;
+        if (!result || typeof result !== "object") {
+          throw new Error("Workflow result missing.");
+        }
+        const formatted = formatWorkflowResult(
+          workflowId,
+          result as Record<string, unknown>,
+          Date.now() - start
+        );
+        controller.enqueue(
+          encoder.encode(encodeSse("final", { workflowId, data: formatted }))
+        );
+        controller.enqueue(encoder.encode(encodeSse("done", { ok: true })));
+        controller.close();
+      } catch (error) {
+        controller.enqueue(
+          encoder.encode(
+            encodeSse("error", {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Agent stream request failed.",
+            })
+          )
+        );
+        controller.close();
+      }
+    },
   });
-  return response;
 };

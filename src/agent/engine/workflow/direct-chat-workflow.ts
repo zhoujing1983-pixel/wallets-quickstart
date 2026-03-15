@@ -1,3 +1,9 @@
+/*
+ * 文件作用：VoltAgent 业务工作流定义：描述每类业务（路由/闲聊/机票/RAG/退货）的步骤与执行策略。
+ * 调用链阶段：VoltAgent 执行阶段（workflow 定义与引擎装配）
+ * 调用链关系：上游：src/agent/engine/voltagent-engine.ts::createDirectChatWorkflow(...)；下游：src/agent/tools/weather-mcp.ts（MCP 工具调用）与 agent.generateText()/streamText()。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import { MCPConfiguration, createWorkflow, andThen } from "@voltagent/core";
 import type { Agent, Tool } from "@voltagent/core";
 import { z } from "zod";

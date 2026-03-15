@@ -1,3 +1,9 @@
+/*
+ * 文件作用：机场与城市映射能力：提供地名/IATA 解析，支撑 flight workflow 参数归一化。
+ * 调用链阶段：能力执行阶段（检索/工具/数据解析）
+ * 调用链关系：上游：src/agent/runtime/langchain/flight-runtime.ts::normalizeFlightInput()、src/agent/engine/workflow/flight-booking-workflow.ts；下游：CSV/JSON 机场索引加载与 resolveIataCode()。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import fs from "fs";
 import path from "path";
 

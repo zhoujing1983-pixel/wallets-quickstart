@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { routeAgentChat } from "@/agent/routing/route-service";
+import {
+  routeAgentChat,
+  routeAgentChatStream,
+} from "@/agent/routing/route-service";
 
 export const runtime = "nodejs";
 
@@ -7,6 +10,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const input = typeof body?.input === "string" ? body.input : "";
+    const stream = body?.stream === true;
     if (!input.trim()) {
       return NextResponse.json(
         { success: false, error: "Missing input." },
@@ -31,15 +35,23 @@ export async function POST(request: Request) {
         : headerThinking === "false"
         ? false
         : undefined;
-    const responseData = await routeAgentChat({
-      input,
-      options,
-      headerEnableThinking,
-    });
-    return NextResponse.json({
-      success: true,
-      data: responseData,
-    });
+    if (stream) {
+      const sseStream = routeAgentChatStream({
+        input,
+        options,
+        headerEnableThinking,
+      });
+      return new Response(sseStream, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
+    const responseData = await routeAgentChat({ input, options, headerEnableThinking });
+    return NextResponse.json({ success: true, data: responseData });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Workflow request failed.";

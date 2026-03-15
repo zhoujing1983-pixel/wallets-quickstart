@@ -1,3 +1,9 @@
+/*
+ * 文件作用：技能加载层：负责动态加载/注册技能能力，供 Agent 执行链路使用。
+ * 调用链阶段：扩展能力装载阶段（技能注册）
+ * 调用链关系：上游：启动/执行链路调用 src/agent/skills/skill-loader.ts::loadSkills()；下游：src/agent/skills/skill-loader.ts::readSkillDefinition()/listSkillFiles()（文件系统扫描与解析）。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import fs from "fs/promises";
 import path from "path";
 

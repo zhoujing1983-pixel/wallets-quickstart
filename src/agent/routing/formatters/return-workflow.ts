@@ -1,3 +1,9 @@
+/*
+ * 文件作用：工作流结果格式化器：把内部结果结构转换为前端稳定响应结构。
+ * 调用链阶段：路由与编排阶段（API 入站后）
+ * 调用链关系：上游：src/agent/routing/route-service.ts::formatWorkflowResult()；下游：src/agent/routing/route-service.ts::routeAgentChat()（返回 formatReturnWorkflowResult() 结果）。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 type ReturnWorkflowResult = {
   case?: {
     decision?: string;

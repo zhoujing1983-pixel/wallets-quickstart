@@ -1,3 +1,9 @@
+/*
+ * 文件作用：服务层封装：对外提供 workflow 相关服务接口，桥接路由层与数据/执行层。
+ * 调用链阶段：服务封装阶段（领域服务对外提供）
+ * 调用链关系：上游：业务层调用 workflowService.execute()/register()；下游：src/agent/dao/workflow-dao.ts::workflowDao.*。
+ * 维护说明：新增/修改本文件时，应保持输入输出契约稳定，避免破坏上游调用方与下游被调方的方法签名。
+ */
 import { randomUUID } from "crypto";
 import { workflowDao } from "@/agent/dao/workflow-dao";
 
