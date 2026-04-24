@@ -116,7 +116,7 @@ const pickModelConfig = () => {
   };
 };
 
-// 进程级单例模型，避免每个请求重复初始化客户端。
+// 模块加载时初始化一次并在当前进程内复用（与是否 export 无关）。
 export const modelConfig = pickModelConfig();
 // 按模型名缓存 ChatOpenAI 实例，降低高并发下重复构造成本。
 const chatModelCache = new Map<string, ChatOpenAI>();

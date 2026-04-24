@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, PointerEvent } from "react";
+import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 import { AgentChatWidget } from "@/components/agent-chat-widget";
 
 const sections = [
@@ -403,7 +403,7 @@ export default function AgentManagementPage() {
   useEffect(() => {
     if (!draggingNode) return;
 
-    const handlePointerMove = (event: PointerEvent) => {
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
       if (dragStartRef.current) {
@@ -445,7 +445,7 @@ export default function AgentManagementPage() {
   useEffect(() => {
     if (!isPanning) return;
 
-    const handlePointerMove = (event: PointerEvent) => {
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
       const start = panStartRef.current;
       if (!start) return;
       setPanOffset({
@@ -471,7 +471,7 @@ export default function AgentManagementPage() {
   useEffect(() => {
     if (!linkDrag) return;
 
-    const handlePointerMove = (event: PointerEvent) => {
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
       const point = {
@@ -509,17 +509,18 @@ export default function AgentManagementPage() {
     };
 
     const handlePointerUp = () => {
-      if (linkDrag.targetId) {
+      const targetId = linkDrag.targetId;
+      if (targetId) {
+        const fromId = linkDrag.fromId;
         setWorkflowEdges((prev) => {
           if (
             prev.some(
-              (edge) =>
-                edge.from === linkDrag.fromId && edge.to === linkDrag.targetId
+              (edge) => edge.from === fromId && edge.to === targetId
             )
           ) {
             return prev;
           }
-          return [...prev, { from: linkDrag.fromId, to: linkDrag.targetId }];
+          return [...prev, { from: fromId, to: targetId }];
         });
       }
       setLinkDrag(null);
@@ -537,7 +538,7 @@ export default function AgentManagementPage() {
   useEffect(() => {
     if (!controlDrag) return;
 
-    const handlePointerMove = (event: PointerEvent) => {
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
       const point = {
@@ -583,7 +584,7 @@ export default function AgentManagementPage() {
   useEffect(() => {
     if (!resizingSidebar) return;
 
-    const handlePointerMove = (event: PointerEvent) => {
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
       const delta = resizingSidebar.startX - event.clientX;
       const nextWidth = Math.min(
         420,
@@ -640,7 +641,7 @@ export default function AgentManagementPage() {
   };
 
   const handleCanvasPointerDown = (
-    event: React.PointerEvent<HTMLDivElement>
+    event: ReactPointerEvent<HTMLDivElement>
   ) => {
     setSelectedEdge(null);
     setSelectedNodeId(null);
@@ -662,7 +663,7 @@ export default function AgentManagementPage() {
   };
 
   const handleNodePointerDown = (
-    event: PointerEvent<HTMLDivElement>,
+    event: ReactPointerEvent<HTMLDivElement>,
     node: WorkflowNode
   ) => {
     if (!canvasRef.current) return;
